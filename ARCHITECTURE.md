@@ -27,6 +27,7 @@ outside `src/config/` names an emulator.
 | -------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | Port (domain)  | `src/config/emulators/savepaths.ts`                  | `SaveMatch` `'unit'`, `SaveUnit`, `SaveLocation.unit`, `SaveContext.saveTarget`, `unit()` |
 | Rules (domain) | `src/config/emulators/units/{keys,ps2,gc,psp,dc}.ts` | Key readers and normalisation. One `SaveUnit` factory per system.                         |
+| Rules (domain) | `src/config/emulators/units/gamedb.ts`               | Names and `memcardFilters` read out of PCSX2's `GameIndex.yaml`, once per environment     |
 | Wiring         | `src/config/emulators/retrodeck/saves.ts`            | Which folder and which rule per RetroDECK component, and the reason when none applies     |
 | Setup rules    | `src/config/emulators/retrodeck/savesetup.ts`        | The save-relevant settings, as data. Pure reads and line-level edits.                     |
 | Adapter        | `src/main/saveunits.ts`                              | `findUnit`, `restoreUnit`, `removeUnit`: the disk half of a unit                          |
@@ -47,12 +48,12 @@ key nothing on the shared folder is claimed, and the buttons say why
 
 ## Formats (Argosy's, so the two clients read each other's saves)
 
-| System    | Folder (RetroDECK 0.10.9b)                                                                                                               | The game's entries                                                                                                                    | On the wire             | Argosy reference                                    |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------- |
-| PS2       | `saves/ps2/pcsx2/memcards/<Slot1_Filename>`, a folder card with `_pcsx2_superblock`                                                      | Folders whose normalised name starts with the serial stem (`BASLUS20152…`). The region prefix is added to a bare serial.              | Zip, each folder a root | `PlatformSaveHandlerRegistry.kt`, `SaveArchiver.kt` |
-| GameCube  | `saves/gc/dolphin/{US,EU,JP}/Card A` (RetroDECK links these to Dolphin's `GC/{USA,EUR,JAP}`). Needs `SlotA = 8` and no `GCIFolderAPath`. | `.gci` files whose header names the disc id. The name stands in only where the header cannot be read. `.deleted` is skipped.          | Zip, each file a root   | `GciSaveHandler.kt`, `GameCubeHeaderParser.kt`      |
-| PSP       | `saves/PSP/PPSSPP-SA` (RetroDECK links PPSSPP's `PSP/SAVEDATA` there), or `<core save dir>/PSP/SAVEDATA` for the libretro core           | Folders starting with the disc id, minus installed game data (a readable PARAM.SFO without `SAVEDATA_PARAMS` or `SAVEDATA_FILE_LIST`) | Zip, each folder a root | `PrefixBundleFolderHandler.kt`                      |
-| Dreamcast | The Flycast core's save folder (`saves/dreamcast`), with `reicast_per_content_vmus = "VMU A1"`                                           | `<product>.A1.bin`, with ` /\:*?\|<>` in the product turned into `_` (Flycast's `getVmuPath`)                                         | The file as it is       | `DreamcastSaveHandler.kt`                           |
+| System    | Folder (RetroDECK 0.10.9b)                                                                                                               | The game's entries                                                                                                                                                       | On the wire                                                     | Argosy reference                                    |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- | --------------------------------------------------- |
+| PS2       | `saves/ps2/pcsx2/memcards/<Slot1_Filename>`, a folder card with `_pcsx2_superblock`                                                      | Folders whose normalised name starts with the serial stem (`BASLUS20152…`), plus those PCSX2's GameDB filters show the game (below). Never `*DATA-SYSTEM` or `*WNETCNF`. | Zip, each folder a root, without PCSX2's `_pcsx2_index` (below) | `PlatformSaveHandlerRegistry.kt`, `SaveArchiver.kt` |
+| GameCube  | `saves/gc/dolphin/{US,EU,JP}/Card A` (RetroDECK links these to Dolphin's `GC/{USA,EUR,JAP}`). Needs `SlotA = 8` and no `GCIFolderAPath`. | `.gci` files whose header names the disc id. The name stands in only where the header cannot be read. `.deleted` is skipped.                                             | Zip, each file a root                                           | `GciSaveHandler.kt`, `GameCubeHeaderParser.kt`      |
+| PSP       | `saves/PSP/PPSSPP-SA` (RetroDECK links PPSSPP's `PSP/SAVEDATA` there), or `<core save dir>/PSP/SAVEDATA` for the libretro core           | Folders starting with the disc id, minus installed game data (a readable PARAM.SFO without `SAVEDATA_PARAMS` or `SAVEDATA_FILE_LIST`)                                    | Zip, each folder a root                                         | `PrefixBundleFolderHandler.kt`                      |
+| Dreamcast | The Flycast core's save folder (`saves/dreamcast`), with `reicast_per_content_vmus = "VMU A1"`                                           | `<product>.A1.bin`, with ` /\:*?\|<>` in the product turned into `_` (Flycast's `getVmuPath`)                                                                            | The file as it is                                               | `DreamcastSaveHandler.kt`                           |
 
 The upload is named `<ROM name>.zip`, or `<ROM name>.<ext>` for the VMU. It
 goes to slot `autosave` (RomM re-stamps the name, so only the slot identifies
@@ -60,6 +61,101 @@ it). RomM's `content_hash` for an archive is the md5 of its entries' names and
 md5s (`hash_zip_contents`), not the md5 of the archive's bytes. RomMix compares
 and verifies units by that value, so a save zipped by Argosy and the same save
 on this disk are recognised as one.
+
+## PS2: the folders PCSX2 shows a game
+
+With `McdFolderAutoManage` on, PCSX2 does not show a game the whole card. It
+indexes only the folders whose name contains a part of a filter
+(`FilterMatches`, `SIO/Memcard/MemoryCardFolder.cpp`, PCSX2 v2.6.3). The filter
+is the game's `memcardFilters` from its game database, joined with `/`, or the
+disc serial where the entry has none (`VMManager.cpp`, `FileMcd_Reopen`).
+`AddFolder` puts `DATA-SYSTEM/BWNETCNF/` in front of it, so every game also sees
+the console's system and network folders. The match is a plain substring of
+the name as written, over folders only. Files at the card's root are skipped.
+
+RomMix reads the same database. RetroDECK's `pcsx2/component_recipe.json`
+copies the AppImage's `usr/bin` to the component's `bin`. The AppImage keeps
+`resources/` beside the executable, and PCSX2 loads `GameIndex.yaml` from there
+(`EmuFolders::Resources`, `GameDatabase.cpp`). So the file is
+`<RetroDECK install>/files/retrodeck/components/pcsx2/bin/resources/GameIndex.yaml`,
+where the install is what `flatpak info --show-location net.retrodeck.retrodeck`
+names. It is read with a line scanner for the fields it needs (`units/gamedb.ts`), not
+a YAML library, and parsed once per `SaveEnvironment`, which in the app is once
+per process.
+
+- A game owns its serial folders as before, plus every folder a filter matches.
+  The filters add to the serial rather than replace it, as they would in PCSX2:
+  some entries (multi-disc Xenosaga, for one) list only their sister serials,
+  and a sync must not drop the game's own folders.
+- `*DATA-SYSTEM` and `*WNETCNF` are never owned, even where a filter names
+  them, as Monster Hunter's names `BWNETCNF`. They are also on the hands-off
+  list, so an archive carrying one is refused whole.
+- A folder owned only through a filter belongs to another game too
+  (`SaveUnit.shares`). That game's sync keeps it. A push carries it, so the
+  archive and its content hash are the same as before. A pull writes it only
+  where nothing is there yet. It never replaces, re-dates or removes one that
+  is there, and deleting this game's saves leaves it. The unit's age
+  (`findUnit`'s `newest`, which the pull compares with the server's copy) is
+  taken from the game's own folders alone, so playing the other game does not
+  make this one read as newer than the server.
+- RomM can file two ROMs under one serial. Half-Life and Half-Life: Blue
+  Shift are both `BASLUS-20066`, because Blue Shift shipped on the Half-Life
+  disc. Only one of them may keep the serial's folders.
+  - A ROM whose name is the database's name for the serial owns the folders.
+    The ROM's file name is compared without region tags, a leading or trailing
+    "The" and punctuation (`titleKey`), against the entry's `name`, `name-en`
+    and `name-sort`.
+  - Any other ROM needs the count. Its unit says so with
+    `SaveUnit.sharingKey`, the bare serial without the card's region prefix,
+    so `BASLUS-20066` and `SLUS-20066` are one key. `SaveSync` then walks the
+    platform's ROMs, without their files, since RomM cannot filter its listing
+    by `save_target` but returns the field. It counts them by that key and asks
+    the descriptor again (`SaveContext.saveTarget.romsSharing`). The walk is
+    kept for the session. A walk that failed stands for `SAVE_KEY_RETRY_MS`,
+    so an offline machine does not wait on the server at every save action.
+    No other system's rule asks for it.
+  - Only ROM under the serial: it owns the folders, whatever it is called.
+    Redump's `Ratchet & Clank - Going Commando` is the only ROM under its
+    serial and so owns it, though the database calls it `Ratchet & Clank 2`.
+  - More than one: every ROM but the database's name holds them as `shares`.
+    It writes them where they are missing and never replaces or deletes them.
+    So does every ROM of a serial the database has no name for.
+  - Count unknown, because the server could not be listed: the ROM owns the
+    folders, as before, and the log says so.
+- Where the database cannot be read, because the install location is unknown,
+  the file is missing, or it holds no entries, the unit is the serial alone and
+  owned as before. `SaveUnit.note` says why, and `SaveSync` logs it as a
+  warning, as it does the two cases above. Such a device refuses an archive
+  that carries a shared folder, since that root is not one it owns. That is
+  safe: nothing is written, and the refusal is logged.
+
+### PCSX2's own files inside a save folder
+
+A folder card keeps `_pcsx2_index` in every save folder: the order and dates of
+the folder's files (`FolderMemoryCard`). It is not the save. A raw card has no
+such file, and PCSX2 orders a folder without one by itself (`GetOrderedFiles`).
+Argosy zips a save folder as it finds it, so its archives carry the index when
+the card had one. The Argosy uploads checked, made on Android, carry none.
+Romp, Ludo and the save importer leave it out.
+
+RomMix accepts both and sends without (`SaveUnit.ignoresInside`, `PS2_FOLDER_FILES`):
+
+- A push leaves `_pcsx2_index` out of the archive and out of the content hash.
+  The same save then hashes alike on a folder card, a raw card and in every
+  client. For the three real saves in the interop check, an export of the
+  untouched card equals the `content_hash` RomM recorded for Argosy's upload.
+- A pull writes the index an archive carries, because it describes the files
+  it came with, and some games depend on their order. Where the archive has
+  none it keeps this device's own, copied back into the replaced folder. Where
+  neither has one, PCSX2 does without. A copy that fails is logged, and never
+  fails the pull.
+- The index does not count towards the unit's age.
+
+`_pcsx2_meta_directory` and the `_pcsx2_meta` folder are part of the save. They
+hold the raw 0x200-byte directory entry of a folder or file whose PS2 name,
+mode or attributes the host file system cannot express (`WriteMetadata`). A
+card loaded without them shows cleaned names and default modes. They are
+carried, hashed and written like any other file of the save.
 
 ## Tags
 
@@ -80,7 +176,8 @@ PSP (`SaveUnit.alsoAccepts`).
 3. The copy is downloaded to a temporary file and checked against RomM's
    content hash, or its byte md5 or length, before anything else happens.
 4. Its roots are read from the archive's directory before it is unpacked. A
-   root the rule keeps its hands off (`_pcsx2_superblock`) refuses the whole
+   root the rule keeps its hands off (`_pcsx2_superblock`, the PS2 system and
+   network folders) refuses the whole
    archive, and so does any root whose name rules it out (`SaveUnit.mayOwn`):
    a PSP folder without the disc-id prefix, a non-`.gci` file, or a GCI whose
    Dolphin-style `<maker>-<code>-` name names another game. A GCI whose name
@@ -99,14 +196,16 @@ PSP (`SaveUnit.alsoAccepts`).
    every member already swapped is put back before the error is raised. If one
    cannot be put back, the displaced copies are left beside the folder and
    named in the log, rather than cleaned away. A member that exists here but
-   not in the archive is removed, after its copy. That is the one deletion a
-   pull makes, and it is logged by name.
+   not in the archive is removed, after its copy, unless another game owns it
+   too (`SaveUnit.shares`). That is the one deletion a pull makes, and it is
+   logged by name.
 8. Nothing else in the folder is read for an upload or written by a pull. The
    tests hash the whole folder minus the game's members before and after
    (`saveunits.test.ts`, `savesync-units.test.ts`).
 
 Deleting a unit "on this device" removes the game's members, each copied aside
-first, and nothing else, under the same running-emulator guard.
+first, and nothing else, under the same running-emulator guard. Members another
+game owns too are left.
 
 ## The first Dreamcast launch
 

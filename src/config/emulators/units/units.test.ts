@@ -13,7 +13,8 @@ import {
   ps2Stems,
   pspDiscId
 } from './keys.ts'
-import { ps2Unit, PS2_CARD_FILES } from './ps2.ts'
+import { memcardFiltersFor, parseGameDb } from './gamedb.ts'
+import { isPs2SystemFolder, ps2Unit, PS2_CARD_FILES, PS2_SYSTEM_FOLDERS } from './ps2.ts'
 import { pspUnit } from './psp.ts'
 import {
   DC_KEY,
@@ -22,6 +23,11 @@ import {
   GC_KEY,
   GC_OWNED,
   PS2_CARD,
+  PS2_FILTER_CARD,
+  PS2_FILTER_KEY,
+  PS2_FILTER_OWN,
+  PS2_FILTER_SHARED,
+  PS2_GAMEDB,
   PS2_KEY,
   PS2_OWNED,
   PSP_KEY,
@@ -138,7 +144,8 @@ describe('what a game owns', () => {
     assert.ok(unit)
     assert.deepEqual(claimed(unit, PS2_CARD), [...PS2_OWNED].sort())
     assert.equal(unit.carriedAs, 'archive')
-    assert.deepEqual(unit.keepsHandsOff, PS2_CARD_FILES)
+    assert.deepEqual(unit.keepsHandsOff, [...PS2_CARD_FILES, ...PS2_SYSTEM_FOLDERS])
+    assert.equal(unit.note, undefined)
     assert.ok(unit.alsoAccepts?.includes('armsx2'))
   })
 
@@ -151,6 +158,72 @@ describe('what a game owns', () => {
 
   test('PS2: no key, no unit', () => {
     assert.equal(ps2Unit('not a serial'), null)
+  })
+
+  const GAMEDB = parseGameDb(PS2_GAMEDB)
+
+  test('PS2: a game’s GameDB filters add the folders PCSX2 shows it, and nothing else', () => {
+    const unit = ps2Unit(PS2_FILTER_KEY, { filters: memcardFiltersFor(GAMEDB, PS2_FILTER_KEY) })
+    assert.ok(unit)
+    assert.deepEqual(
+      claimed(unit, PS2_FILTER_CARD),
+      [...PS2_FILTER_OWN, ...PS2_FILTER_SHARED].sort()
+    )
+    // Its own folder is its own; the first game's is shared with the first game.
+    assert.equal(unit.shares?.(PS2_FILTER_OWN[0]), false)
+    assert.equal(unit.shares?.(PS2_FILTER_SHARED[0]), true)
+  })
+
+  test('PS2: a filter is matched as PCSX2 matches it — anywhere in a folder’s name, as written', () => {
+    const unit = ps2Unit(PS2_FILTER_KEY, { filters: ['SCUS-97199'] })
+    assert.ok(unit)
+    assert.equal(unit.owns('BASCUS-97199RATCHET', 'dir', ROOT), true)
+    assert.equal(unit.owns('XX-SCUS-97199', 'dir', ROOT), true)
+    // A filter is not normalised: PCSX2's substring match is case- and dash-exact.
+    assert.equal(unit.owns('BASCUS_97199RATCHET', 'dir', ROOT), false)
+    assert.equal(unit.owns('bascus-97199ratchet', 'dir', ROOT), false)
+    // Never a file at the card's root, which PCSX2 never shows a game.
+    assert.equal(unit.owns('SCUS-97199.txt', 'file', ROOT), false)
+  })
+
+  test('PS2: the console’s system and network folders are no game’s, even when a filter names them', () => {
+    const unit = ps2Unit('SLPM-65495', { filters: memcardFiltersFor(GAMEDB, 'SLPM-65495') })
+    assert.ok(unit)
+    assert.deepEqual(claimed(unit, PS2_FILTER_CARD), ['BISLPM-65286NET', 'BISLPM-65495MH'])
+    for (const name of [...PS2_SYSTEM_FOLDERS, 'BWNETCNF2', 'BADATA-SYSTEM-X']) {
+      assert.equal(unit.owns(name, 'dir', ROOT), false, name)
+      assert.equal(isPs2SystemFolder(name), true, name)
+    }
+    // A filter that is nothing but the system folder's name claims nothing.
+    const greedy = ps2Unit(PS2_KEY, { filters: ['DATA-SYSTEM', 'BWNETCNF'] })
+    assert.ok(greedy)
+    assert.deepEqual(claimed(greedy, PS2_CARD), [...PS2_OWNED].sort())
+  })
+
+  test('PS2: a game without filters, or without the database, is the serial alone', () => {
+    const futurama = ps2Unit('BASLUS-20439', { filters: memcardFiltersFor(GAMEDB, 'BASLUS-20439') })
+    assert.ok(futurama)
+    assert.deepEqual(claimed(futurama, PS2_FILTER_CARD), ['BASLUS-20439Futurama'])
+    const unread = ps2Unit(PS2_FILTER_KEY, { note: 'no database' })
+    assert.ok(unread)
+    assert.deepEqual(claimed(unread, PS2_FILTER_CARD), [...PS2_FILTER_OWN])
+    assert.equal(unread.note, 'no database')
+  })
+
+  test('PS2: a ROM that is not the serial’s game owns its folders as another game’s', () => {
+    const unit = ps2Unit('SLUS-20066', { serialShared: true, note: 'not Half-Life' })
+    assert.ok(unit)
+    assert.equal(unit.owns('BASLUS-20066SYSTEM', 'dir', ROOT), true)
+    assert.equal(unit.shares?.('BASLUS-20066SYSTEM'), true)
+    assert.equal(unit.note, 'not Half-Life')
+    const own = ps2Unit('SLUS-20066')
+    assert.equal(own?.shares?.('BASLUS-20066SYSTEM'), false)
+  })
+
+  test('PS2: an empty filter claims nothing rather than the whole card', () => {
+    const unit = ps2Unit(PS2_KEY, { filters: [''] })
+    assert.ok(unit)
+    assert.deepEqual(claimed(unit, PS2_CARD), [...PS2_OWNED].sort())
   })
 
   test('GameCube: the game’s .gci files by header, not the other game, not a deleted one', () => {

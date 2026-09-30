@@ -728,7 +728,7 @@ export class RommClient {
     // it a listing can only offer the folder's name, which matches nothing on
     // disk — so every such game looks un-downloaded however many times the
     // library is reconciled.
-    params.set('with_files', 'true')
+    if (query.with_files !== false) params.set('with_files', 'true')
     return this.json<RommRomPage>(`/api/roms?${params.toString()}`)
   }
 

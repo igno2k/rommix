@@ -12,7 +12,8 @@ import { baseName, directory, joinPath, perRom, shared, unit } from '../savepath
 import type { SaveContext, SaveLocation, SavePaths, SaveSeed, SaveUnit } from '../savepaths.ts'
 import { dreamcastSeed, dreamcastUnit } from '../units/dc.ts'
 import { dolphinRegion, gameCubeUnit } from '../units/gc.ts'
-import { gameCubeId, GAMECUBE_HEAD_BYTES } from '../units/keys.ts'
+import { gameCubeId, GAMECUBE_HEAD_BYTES, ps2Stems } from '../units/keys.ts'
+import { isGameDbTitle, memcardFiltersFor, PCSX2_GAMEDB_FILE, readGameDb } from '../units/gamedb.ts'
 import { ps2Unit, PS2_SUPERBLOCK } from '../units/ps2.ts'
 import { pspUnit } from '../units/psp.ts'
 import { RETRODECK_APP_ID } from './appid.ts'
@@ -116,6 +117,68 @@ function pcsx2Card(ctx: SaveContext, memcards: string): { dir: string } | { reas
 }
 
 /**
+ * PCSX2's resources folder inside RetroDECK's deploy directory, where its game
+ * database is.
+ *
+ * RetroDECK's `pcsx2/component_recipe.json` unpacks PCSX2's AppImage and
+ * copies its `usr/bin` to the component's `bin`; the AppImage keeps the
+ * resources beside the executable (`appimage-qt.sh` copies them to
+ * `usr/bin/resources`), and PCSX2 looks for them there (`EmuFolders::Resources`
+ * is `<AppRoot>/resources`).
+ */
+const PCSX2_RESOURCES = 'files/retrodeck/components/pcsx2/bin/resources'
+
+/** A PS2 serial as two ROMs' `save_target`s are compared: without the card's region prefix. */
+function ps2SharingKey(saveTarget: string): string | null {
+  return ps2Stems(saveTarget)[1] ?? null
+}
+
+/**
+ * The PS2 unit of this game, read against PCSX2's game database.
+ *
+ * With the database: the serial's folders plus those the game's filters name.
+ * Without it: the serial alone, and a note.
+ *
+ * RomM can file two ROMs under one serial — a game and the add-on sold on its
+ * disc — and only one of them may replace or remove the serial's folders.
+ * Where the server says this ROM is the only one under its serial, it owns them
+ * whatever it is called. Where there are more, the one the database names for
+ * the serial owns them, and for every other one — and for all of them where
+ * the database cannot name the serial — they are another game's
+ * (`serialShared`). Where the count is unknown, this ROM owns them, with a
+ * note: RomMix will not stop syncing a game because the server was out of
+ * reach. The count is only asked for where the ROM is not the database's name
+ * for the serial — the one case it decides.
+ */
+function pcsx2Unit(ctx: SaveContext, key: string): SaveUnit | null {
+  const path = ctx.installDir ? joinPath(ctx.installDir, PCSX2_RESOURCES, PCSX2_GAMEDB_FILE) : null
+  const db = path ? readGameDb(ctx.env, path) : null
+  if (!db) {
+    const note = path
+      ? `PCSX2\u2019s game database could not be read at ${path}; the serial alone decides`
+      : 'RetroDECK\u2019s install location is unknown, so PCSX2\u2019s game database is not read; the serial alone decides'
+    return ps2Unit(key, { note })
+  }
+  const filters = memcardFiltersFor(db, key)
+  if (isGameDbTitle(db, key, ctx.romStem)) return ps2Unit(key, { filters })
+  const asked = ctx.saveTarget?.romsSharing
+  if (asked === undefined) return ps2Unit(key, { filters, sharingKey: ps2SharingKey })
+  const sharing = asked
+  if (sharing === null) {
+    return ps2Unit(key, {
+      filters,
+      note: `how many ROMs RomM files under ${key} is unknown, so this one owns that serial\u2019s folders`
+    })
+  }
+  if (sharing <= 1) return ps2Unit(key, { filters })
+  return ps2Unit(key, {
+    filters,
+    serialShared: true,
+    note: `RomM files ${sharing} ROMs under ${key} and \u201c${ctx.romStem}\u201d is not the one PCSX2\u2019s game database names, so that serial\u2019s folders are kept as another game\u2019s: written where absent, never replaced or removed`
+  })
+}
+
+/**
  * The key RomM read out of this game, where the server sent one.
  *
  * Without it a game's entries on a shared card cannot be told from another's,
@@ -175,7 +238,7 @@ export const RETRODECK_COMPONENTS: Readonly<Record<string, ComponentSaves>> = {
     const card = pcsx2Card(ctx, memcards)
     if ('reason' in card) return { ...unsyncable(memcards, card.reason), states }
     const key = saveKey(ctx)
-    const rule = key ? ps2Unit(key) : null
+    const rule = key ? pcsx2Unit(ctx, key) : null
     if (!rule) return { ...unsyncable(memcards, 'saves.noSaveTarget'), states }
     return { saves: unit(card.dir, guarded(rule, 'pcsx2-qt')), states }
   },

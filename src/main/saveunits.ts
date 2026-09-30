@@ -1,5 +1,5 @@
 import { copyFile, link, lstat, mkdir, readdir, realpath, rename, rm, stat } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import type { SaveUnit } from '@config/emulators'
 import { t } from './i18n.ts'
 import { log } from './log.ts'
@@ -30,8 +30,18 @@ import { extractZip, SAVE_ARCHIVE_MAX_BYTES, zipRoots } from './zip.ts'
 export interface UnitOnDisk {
   /** Names of the owned entries directly inside the location's `dir`, sorted. */
   members: string[]
-  /** Newest mtime of any file under them; 0 when there is none. */
+  /** Those of `members` another game owns too (`SaveUnit.shares`), sorted. */
+  shared: string[]
+  /**
+   * Newest mtime of any file under the members that are the game's alone; 0
+   * when there is none. A shared entry moves when the other game is played.
+   */
   newest: number
+}
+
+/** Does another game own this entry too? */
+function isShared(unit: SaveUnit, name: string): boolean {
+  return unit.shares?.(name) ?? false
 }
 
 /** The directory entries of `dir` with their kind, symlinks as what they point at. */
@@ -70,9 +80,14 @@ async function ownedIn(
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
 }
 
-/** Newest mtime under one entry, file or folder. */
-async function newestOf(path: string, kind: 'file' | 'dir'): Promise<number> {
-  const files = kind === 'dir' ? await walk(path) : [path]
+/** Is this file inside a member the emulator's rather than the save's? */
+function ignored(unit: SaveUnit, file: string): boolean {
+  return (unit.ignoresInside ?? []).includes(basename(file))
+}
+
+/** Newest mtime under one entry, file or folder, minus what the rule ignores inside. */
+async function newestOf(unit: SaveUnit, path: string, kind: 'file' | 'dir'): Promise<number> {
+  const files = kind === 'dir' ? (await walk(path)).filter((file) => !ignored(unit, file)) : [path]
   let latest = 0
   for (const file of files) {
     latest = Math.max(latest, (await stat(file).catch(() => null))?.mtimeMs ?? 0)
@@ -80,13 +95,16 @@ async function newestOf(path: string, kind: 'file' | 'dir'): Promise<number> {
   return latest
 }
 
-/** The game's entries in `dir`, and how new the newest of them is. */
+/** The game's entries in `dir`, and how new the newest of its own is. */
 export async function findUnit(dir: string, unit: SaveUnit): Promise<UnitOnDisk> {
   const owned = await ownedIn(unit, dir)
   let newest = 0
-  for (const entry of owned)
-    newest = Math.max(newest, await newestOf(join(dir, entry.name), entry.kind))
-  return { members: owned.map((entry) => entry.name), newest }
+  for (const entry of owned) {
+    if (isShared(unit, entry.name)) continue
+    newest = Math.max(newest, await newestOf(unit, join(dir, entry.name), entry.kind))
+  }
+  const members = owned.map((entry) => entry.name)
+  return { members, shared: members.filter((name) => isShared(unit, name)), newest }
 }
 
 /**
@@ -184,6 +202,9 @@ type Move = (from: string, to: string) => Promise<void>
  * Replace the game's entries in `dir` with the ones in the archive at
  * `archive`, which the caller has already downloaded and verified.
  *
+ * An entry another game owns as well (`SaveUnit.shares`) is written only where
+ * nothing is there yet, and one that is there is neither replaced nor removed.
+ *
  * Members here that the archive does not carry are removed too — after their
  * copy is taken — because the archive is the unit: a save deleted on another
  * device stays deleted, as it does under Argosy. That is the one thing a pull
@@ -238,8 +259,17 @@ export async function restoreUnit(options: {
     const accepted = await acceptedRoots(unit, staging)
     if (!accepted) return await refuse((await entriesOf(staging)).map((root) => root.name))
 
+    // An entry another game owns too is the other game's to keep: written only
+    // where nothing is there, and otherwise not touched at all — see
+    // `SaveUnit.shares`.
+    const kept: string[] = []
+    const names: string[] = []
+    for (const name of accepted.names) {
+      if (isShared(unit, name) && (await occupied(join(dir, name)))) kept.push(name)
+      else names.push(name)
+    }
     const incoming = new Set(accepted.names)
-    const local = await ownedIn(unit, dir)
+    const local = (await ownedIn(unit, dir)).filter((entry) => !isShared(unit, entry.name))
     const leaving = local.filter((entry) => !incoming.has(entry.name))
 
     // Every copy first, so a member that cannot be kept stops the pull before
@@ -254,7 +284,7 @@ export async function restoreUnit(options: {
     /** What has changed so far, in order, for the way back. */
     const done: { name: string; had: boolean; placed: boolean }[] = []
     try {
-      for (const name of accepted.names) {
+      for (const name of names) {
         const had = local.some((entry) => entry.name === name)
         if (had) await move(join(dir, name), join(aside, name))
         done.push({ name, had, placed: false })
@@ -280,12 +310,13 @@ export async function restoreUnit(options: {
       throw cause
     }
 
-    for (const name of accepted.names) {
+    for (const name of names) {
       const target = join(dir, name)
       const kind = (await stat(target)).isDirectory() ? 'dir' : 'file'
       for (const file of kind === 'dir' ? await walk(target) : [])
         await stampMtime(file, remoteTime)
       await stampMtime(target, remoteTime)
+      if (kind === 'dir') await carryOver(unit, join(aside, name), target)
     }
     for (const entry of leaving) {
       log.info('saves', 'removed an entry the pulled copy of this game no longer has', {
@@ -299,10 +330,11 @@ export async function restoreUnit(options: {
       romId,
       key: unit.key,
       dir,
-      wrote: accepted.names,
+      wrote: names,
+      keptShared: kept,
       removed: leaving.map((entry) => entry.name)
     })
-    return accepted.names
+    return names
   } finally {
     await rm(staging, { recursive: true, force: true }).catch((cause: unknown) =>
       log.warn('saves', 'could not remove a pull\u2019s staging folder', {
@@ -317,6 +349,30 @@ export async function restoreUnit(options: {
           reason: (cause as Error).message
         })
       )
+    }
+  }
+}
+
+/**
+ * Put the emulator's own files of a replaced member back into the new one —
+ * see `SaveUnit.ignoresInside` — each where its folder still exists and the
+ * archive brought none: an archive's own describes the files it came with. A
+ * copy that fails is logged and left to the emulator, which does without; it
+ * never fails the pull.
+ */
+async function carryOver(unit: SaveUnit, from: string, to: string): Promise<void> {
+  for (const file of await walk(from)) {
+    if (!ignored(unit, file)) continue
+    const target = join(to, relative(from, file))
+    try {
+      const folder = await stat(dirname(target)).catch(() => null)
+      if (!folder?.isDirectory() || (await occupied(target))) continue
+      await copyFile(file, target)
+    } catch (cause) {
+      log.warn('saves', 'could not keep the emulator\u2019s own file in a pulled folder', {
+        file: target,
+        reason: (cause as Error).message
+      })
     }
   }
 }
@@ -355,10 +411,11 @@ async function rollBack(
 /**
  * Remove the game's entries from `dir`, each copied aside first — what
  * deleting "this game's save on this device" means for a unit. Nothing else in
- * the folder is touched.
+ * the folder is touched, and neither is an entry another game owns as well
+ * (`SaveUnit.shares`).
  */
 export async function removeUnit(dir: string, unit: SaveUnit, backups: string): Promise<string[]> {
-  const owned = await ownedIn(unit, dir)
+  const owned = (await ownedIn(unit, dir)).filter((entry) => !(unit.shares?.(entry.name) ?? false))
   for (const entry of owned) {
     if (!(await backedUp(join(dir, entry.name), backups, entry.kind))) {
       throw new Error(t('error.unitNoBackup', { name: entry.name }))

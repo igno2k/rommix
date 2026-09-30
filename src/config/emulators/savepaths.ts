@@ -88,6 +88,42 @@ export interface SaveUnit {
    */
   fileName?: string
   /**
+   * Is this entry, which the game owns, one another game owns as well — a
+   * folder PCSX2 lets a sequel read, the save the discs of one game share, a
+   * serial RomM files a second ROM under? Asked only of owned entries.
+   *
+   * Such an entry goes up with the game's own, so the archive is the same one
+   * any client makes. But the other game's sync is what keeps it: a pull
+   * writes it only where nothing is there yet, and never replaces, stamps or
+   * removes one that is, nor does deleting this game's saves. It does not
+   * count towards the unit's age either, so playing the other game does not
+   * make this one read as newer than the server. Absent means none is shared.
+   */
+  shares?(name: string): boolean
+  /**
+   * Why the rule is narrower than the emulator's own, logged as a warning — a
+   * PS2 unit built without PCSX2's game database, or for a ROM that is not the
+   * game its serial names. Absent when it is the emulator's.
+   */
+  note?: string
+  /**
+   * Names of files inside the game's entries, at any depth, that are the
+   * emulator's bookkeeping rather than the save — PCSX2's `_pcsx2_index` in
+   * every save folder. Never archived or hashed by a push, so the same save
+   * hashes alike on a client that never had them. A pull writes the one an
+   * archive carries, since it describes the files beside it; where the archive
+   * has none it keeps this device's; and where neither has one, the emulator
+   * does without.
+   */
+  ignoresInside?: readonly string[]
+  /**
+   * Present where the rule depends on `SaveContext.saveTarget.romsSharing` and
+   * was built without it: the key under which two `save_target`s are the same
+   * game's — a PS2 serial with or without its region prefix. The main process
+   * counts the platform's ROMs by it and asks the descriptor again.
+   */
+  sharingKey?(saveTarget: string): string | null
+  /**
    * Entries of the shared folder a pull must never create, remove or overwrite,
    * even when an archive carries them — the folder card's own superblock.
    */
@@ -293,8 +329,15 @@ export interface SaveContext {
    * Dreamcast product number. Reading those here would mean parsing ISO9660 and
    * CHD out of a descriptor, so the server's reading is taken, which is also
    * what Argosy does.
+   *
+   * `romsSharing` is how many ROMs of the game's platform the server files
+   * under the same key, this one included: more than one is two games — Half-
+   * Life and Blue Shift on one disc — whose saves are one set of folders.
+   * Absent where it was not asked for — a rule that depends on it says so with
+   * `SaveUnit.sharingKey`, and is asked again with it — and null where the
+   * server could not say.
    */
-  saveTarget: { key: string; layout: string | null } | null
+  saveTarget: { key: string; layout: string | null; romsSharing?: number | null } | null
   env: SaveEnvironment
 }
 

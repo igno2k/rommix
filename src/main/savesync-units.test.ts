@@ -19,6 +19,10 @@ import {
   GCI_FOLDER,
   GC_OWNED,
   PS2_CARD,
+  PS2_FILTER_CARD,
+  PS2_FILTER_OWN,
+  PS2_FILTER_SHARED,
+  PS2_GAMEDB,
   PS2_OWNED,
   PSP_OWNED,
   SAVEDATA,
@@ -105,6 +109,12 @@ function retroDeck(options: {
   downloadFails?: boolean
   /** The command lines of the processes running on this machine. */
   processes?: string[]
+  /** PCSX2's `GameIndex.yaml`, where RetroDECK's PCSX2 component keeps it. */
+  gamedb?: string
+  /** The `save_target` of every other ROM on the platform, as RomM lists them. */
+  otherSaveTargets?: string[]
+  /** Listing the platform's ROMs fails, as it does offline. */
+  listRomsFails?: boolean
 }): {
   sync: SaveSync
   target: SaveTarget
@@ -115,6 +125,8 @@ function retroDeck(options: {
   config: string
   bios: string
   store: Store
+  /** How often the platform's ROMs were listed. */
+  romsListed: () => number
 } {
   const home = scratch()
   const rd = join(home, 'retrodeck')
@@ -126,6 +138,11 @@ function retroDeck(options: {
       '<command label="Flycast">%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/flycast_libretro.so %ROM%</command>' +
       '</system></systemList>'
   )
+  if (options.gamedb !== undefined) {
+    const resources = join(install, 'files/retrodeck/components/pcsx2/bin/resources')
+    mkdirSync(resources, { recursive: true })
+    writeFileSync(join(resources, 'GameIndex.yaml'), options.gamedb)
+  }
   const romDir = join(rd, 'roms', options.system)
   mkdirSync(romDir, { recursive: true })
   const romPath = join(romDir, options.romFile)
@@ -144,6 +161,7 @@ function retroDeck(options: {
   )
 
   const uploaded: Uploaded[] = []
+  let romsListed = 0
   const client = {
     saves: async () => {
       if (options.listFails) throw new Error('RomM did not answer')
@@ -151,6 +169,18 @@ function retroDeck(options: {
     },
     states: async () => [],
     devices: async () => [],
+    roms: async () => {
+      romsListed += 1
+      if (options.listRomsFails) throw new Error('RomM did not answer')
+      return {
+        items: [options.saveTarget ?? null, ...(options.otherSaveTargets ?? [])].map(
+          (saveTarget) => ({ save_target: saveTarget })
+        ),
+        total: null,
+        limit: 500,
+        offset: 0
+      }
+    },
     downloadSave: async (_id: number, to: string) => {
       if (options.downloadFails) throw new Error('the connection dropped')
       if (options.remoteFile !== undefined) {
@@ -199,6 +229,7 @@ function retroDeck(options: {
     name: stem,
     fs_name: options.romFile,
     fs_name_no_ext: stem,
+    platform_id: 7,
     platform_slug: options.system,
     platform_fs_slug: options.system,
     save_target: options.saveTarget ?? null,
@@ -217,7 +248,8 @@ function retroDeck(options: {
     backups,
     uploaded,
     config,
-    bios: join(rd, 'bios')
+    bios: join(rd, 'bios'),
+    romsListed: () => romsListed
   }
 }
 
@@ -269,6 +301,118 @@ const PS2_REMOTE: FixtureTree = {
   'BASLUS-20152SYS/settings': 'settings changed on the other device'
 }
 
+describe('PCSX2 folder card, with the GameDB', () => {
+  /**
+   * Ratchet & Clank 2, whose GameDB filters reach Ratchet & Clank's save —
+   * under Redump's name for it, which is not the GameDB's: the only ROM under
+   * its serial owns it whatever it is called.
+   */
+  function ratchet2(options: { saves?: RommSave[]; remote?: FixtureTree } = {}) {
+    const rig = retroDeck({
+      system: 'ps2',
+      romFile: 'Ratchet & Clank - Going Commando (USA).chd',
+      saveTarget: 'BASCUS-97268',
+      gamedb: PS2_GAMEDB,
+      ...options
+    })
+    const card = join(rig.saves, 'ps2', 'pcsx2', 'memcards', 'Mcd001.ps2')
+    plant(card, PS2_FILTER_CARD)
+    age(card)
+    return { ...rig, card }
+  }
+
+  test('a push carries the first game’s folder too, and never the console’s', async () => {
+    const { sync, target, uploaded } = ratchet2()
+    assert.equal((await sync.pushNow(target)).saves, 1)
+    assert.deepEqual(
+      await rootsOf(uploaded[0].bytes),
+      [...PS2_FILTER_OWN, ...PS2_FILTER_SHARED].sort()
+    )
+  })
+
+  test('the first game played here since does not hide a newer copy, nor lose to its older one', async () => {
+    const { sync, target, card } = ratchet2({
+      saves: [remoteSave()],
+      remote: {
+        'BASCUS-97268RATCHET2/save': 'Ratchet 2 on the other device',
+        'BASCUS-97199RATCHET/save': 'Ratchet 1 as the other device had it'
+      }
+    })
+    // Ratchet 1 played on this machine after the server's copy was made.
+    const played = new Date('2026-09-20T00:00:00Z')
+    for (const file of ['icon.sys', 'save'])
+      utimesSync(join(card, PS2_FILTER_SHARED[0], file), played, played)
+    const first = hashes(card, PS2_FILTER_OWN)
+
+    const result = await sync.pullNow(target)
+
+    assert.deepEqual([result.saves, result.failed], [1, 0])
+    assert.equal(
+      readFileSync(join(card, 'BASCUS-97268RATCHET2', 'save'), 'utf8'),
+      'Ratchet 2 on the other device'
+    )
+    assert.deepEqual(hashes(card, PS2_FILTER_OWN), first)
+  })
+
+  test('of two ROMs under Half-Life’s serial, only Half-Life replaces its folder', async () => {
+    const remote = { 'BASLUS-20066SYSTEM/system.cfg': 'settings from the other device' }
+    const card = { ...PS2_CARD, 'BASLUS-20066SYSTEM/system.cfg': 'settings here' }
+    const rig = (romFile: string) => {
+      const made = retroDeck({
+        system: 'ps2',
+        romFile,
+        saveTarget: 'BASLUS-20066',
+        // RomM's other reading of the same serial, without the card's prefix.
+        otherSaveTargets: ['SLUS-20066'],
+        gamedb: PS2_GAMEDB,
+        saves: [remoteSave()],
+        remote
+      })
+      const dir = join(made.saves, 'ps2', 'pcsx2', 'memcards', 'Mcd001.ps2')
+      plant(dir, card)
+      age(dir)
+      return { ...made, dir }
+    }
+
+    const blueShift = rig('Half-Life - Blue Shift (USA).chd')
+    const before = hashes(blueShift.dir)
+    await blueShift.sync.pullNow(blueShift.target)
+    assert.deepEqual(hashes(blueShift.dir), before)
+    assert.equal((await blueShift.sync.pushNow(blueShift.target)).saves, 0)
+    // Listed once for the session, however many times the unit is resolved.
+    assert.equal(blueShift.romsListed(), 1)
+
+    const halfLife = rig('Half-Life (USA).chd')
+    assert.equal((await halfLife.sync.pullNow(halfLife.target)).saves, 1)
+    assert.equal(
+      readFileSync(join(halfLife.dir, 'BASLUS-20066SYSTEM', 'system.cfg'), 'utf8'),
+      'settings from the other device'
+    )
+    // The ROM the GameDB names for the serial never needs the count.
+    assert.equal(halfLife.romsListed(), 0)
+  })
+
+  test('offline, the count is unknown: the ROM owns its serial, and the failure is not retried at once', async () => {
+    const made = retroDeck({
+      system: 'ps2',
+      romFile: 'Half-Life - Blue Shift (USA).chd',
+      saveTarget: 'BASLUS-20066',
+      gamedb: PS2_GAMEDB,
+      saves: [remoteSave()],
+      remote: { 'BASLUS-20066SYSTEM/system.cfg': 'settings from the other device' },
+      listRomsFails: true
+    })
+    const dir = join(made.saves, 'ps2', 'pcsx2', 'memcards', 'Mcd001.ps2')
+    plant(dir, { ...PS2_CARD, 'BASLUS-20066SYSTEM/system.cfg': 'settings here' })
+    age(dir)
+
+    assert.equal((await made.sync.pullNow(made.target)).saves, 1)
+    await made.sync.pushNow(made.target)
+    await made.sync.listAssets(42, made.target)
+    assert.equal(made.romsListed(), 1)
+  })
+})
+
 describe('PCSX2 folder card', () => {
   function ps2(options: { saves?: RommSave[]; remote?: FixtureTree; processes?: string[] } = {}) {
     const rig = retroDeck({
@@ -282,6 +426,31 @@ describe('PCSX2 folder card', () => {
     age(card)
     return { ...rig, card }
   }
+
+  test('a push leaves PCSX2’s index out of the archive, and carries its metadata', async () => {
+    const { sync, target, card, uploaded } = ps2()
+    writeFileSync(join(card, 'BASLUS-20152AC04', '_pcsx2_index'), 'index')
+    writeFileSync(join(card, 'BASLUS-20152SYS', '_pcsx2_meta_directory'), 'entry')
+    assert.equal((await sync.pushNow(target)).saves, 1)
+
+    const unpacked = scratch()
+    const archive = join(unpacked, 'up.zip')
+    writeFileSync(archive, uploaded[0].bytes)
+    await extractZip(archive, join(unpacked, 'out'), { maxBytes: 1 << 20 })
+    const files = readdirSync(join(unpacked, 'out'), { recursive: true }).map(String)
+    assert.ok(!files.some((name) => name.endsWith('_pcsx2_index')), files.join(', '))
+    assert.equal(
+      await zipContentHash(archive),
+      await rommHashOf({
+        ...Object.fromEntries(
+          Object.entries(PS2_CARD).filter(([path]) =>
+            PS2_OWNED.some((member) => path.startsWith(`${member}/`))
+          )
+        ),
+        'BASLUS-20152SYS/_pcsx2_meta_directory': 'entry'
+      })
+    )
+  })
 
   test('a push sends the game’s folders as one zip, under the ROM’s name and the shared slot', async () => {
     const { sync, target, uploaded } = ps2()
@@ -559,6 +728,8 @@ describe('PPSSPP SAVEDATA', () => {
     // The slot the other device no longer has goes, and is kept among the copies.
     assert.equal(existsSync(join(savedata, 'ULUS10064DATA01')), false)
     assert.ok(existsSync(join(rig.backups, '42', 'ULUS10064DATA01.1')))
+    // Only a rule that asks for it has the platform's ROMs counted.
+    assert.equal(rig.romsListed(), 0)
   })
 })
 

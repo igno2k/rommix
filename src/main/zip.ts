@@ -330,23 +330,33 @@ export async function zipDirectory(dir: string, zipPath: string): Promise<number
 export async function zipMembers(
   dir: string,
   members: readonly string[],
-  zipPath: string
+  zipPath: string,
+  ignore: readonly string[] = []
 ): Promise<number> {
-  return writeZip(dir, await memberEntries(dir, members), zipPath)
+  return writeZip(dir, await memberEntries(dir, members, ignore), zipPath)
 }
 
 /**
  * The files `zipMembers` archives for these members, relative to `dir` — a
- * folder member as every file under it, a file member as itself.
+ * folder member as every file under it, a file member as itself — minus any
+ * file inside a folder member whose name is in `ignore` (`SaveUnit.ignoresInside`).
  */
-export async function memberEntries(dir: string, members: readonly string[]): Promise<string[]> {
+export async function memberEntries(
+  dir: string,
+  members: readonly string[],
+  ignore: readonly string[] = []
+): Promise<string[]> {
   const names: string[] = []
   for (const member of members) {
     const path = join(dir, member)
     const info = await stat(path).catch(() => null)
     if (!info) continue
-    if (info.isDirectory()) names.push(...(await entryNamesUnder(path, member)))
-    else names.push(member)
+    if (info.isDirectory()) {
+      const inside = await entryNamesUnder(path, member)
+      names.push(
+        ...inside.filter((name) => !ignore.includes(name.slice(name.lastIndexOf('/') + 1)))
+      )
+    } else names.push(member)
   }
   return names
 }
@@ -412,10 +422,11 @@ export async function zipContentHash(zipPath: string): Promise<string> {
  */
 export async function membersContentHash(
   dir: string,
-  members: readonly string[]
+  members: readonly string[],
+  ignore: readonly string[] = []
 ): Promise<string | null> {
   const entries: { name: string; md5: string }[] = []
-  for (const name of await memberEntries(dir, members)) {
+  for (const name of await memberEntries(dir, members, ignore)) {
     const md5 = await hashOf(join(dir, name), 'md5').catch(() => null)
     if (md5 === null) return null
     entries.push({ name, md5 })

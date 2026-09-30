@@ -23,7 +23,7 @@ import type { EmulatorDescriptor } from './types.ts'
 import { unit } from './savepaths.ts'
 import type { SaveContext, SaveEnvironment, SavePaths, SaveUnit } from './savepaths.ts'
 import { createI18n, localize } from '@shared/i18n'
-import { gameCubeIso, gci, paramSfo } from './units/fixtures.ts'
+import { gameCubeIso, gci, paramSfo, PS2_GAMEDB } from './units/fixtures.ts'
 
 /**
  * Save resolution, against a described machine rather than a real one.
@@ -1418,6 +1418,7 @@ function retroDeckUnit(options: {
   romPath: string
   system: string
   saveTarget?: string
+  romsSharing?: number | null
   files?: Record<string, string>
   dirs?: Record<string, string[]>
   installDir?: string
@@ -1427,7 +1428,9 @@ function retroDeckUnit(options: {
     system: options.system,
     configDir: RD_CONFIG,
     installDir: options.installDir ?? null,
-    saveTarget: options.saveTarget ? { key: options.saveTarget, layout: null } : null,
+    saveTarget: options.saveTarget
+      ? { key: options.saveTarget, layout: null, romsSharing: options.romsSharing }
+      : null,
     paths: { home: RD, roms: `${RD}/roms`, saves: `${RD}/saves`, states: `${RD}/states` },
     env: machine({
       files: { [`${RD_CONFIG}/retroarch/retroarch.cfg`]: RETRODECK_CFG, ...options.files },
@@ -1460,6 +1463,146 @@ test('RetroDECK PCSX2: the game owns its folders on the card slot 1 names', () =
   assert.equal(paths.states?.match, 'rom-stem')
   assert.equal(paths.emulator, 'pcsx2')
   assert.equal(paths.unsyncableReason, undefined)
+})
+
+const RD_INSTALL = '/var/lib/flatpak/app/net.retrodeck.retrodeck/current/active'
+const RD_GAMEDB = `${RD_INSTALL}/files/retrodeck/components/pcsx2/bin/resources/GameIndex.yaml`
+
+/** A PS2 ROM on RetroDECK's card, with or without PCSX2's database there. */
+function onCard(options: {
+  installDir?: string
+  gamedb?: string
+  rom?: string
+  saveTarget?: string
+  /** How many ROMs RomM files under the serial; one unless a test says otherwise. */
+  romsSharing?: number | null
+}): SavePaths {
+  return retroDeckUnit({
+    romsSharing: options.romsSharing === undefined ? 1 : options.romsSharing,
+    romPath: `${RD}/roms/ps2/${options.rom ?? 'Ratchet & Clank 2 - Going Commando (USA)'}.chd`,
+    system: 'ps2',
+    saveTarget: options.saveTarget ?? 'BASCUS-97268',
+    installDir: options.installDir,
+    files: {
+      [`${MEMCARDS}/Mcd001.ps2/_pcsx2_superblock`]: 'superblock',
+      ...(options.gamedb === undefined ? {} : { [RD_GAMEDB]: options.gamedb })
+    },
+    dirs: { [MEMCARDS]: ['Mcd001.ps2'] }
+  })
+}
+
+test('RetroDECK PCSX2: the game also owns what its filters in PCSX2’s bundled GameDB name', () => {
+  const paths = onCard({ installDir: RD_INSTALL, gamedb: PS2_GAMEDB })
+  const card = `${MEMCARDS}/Mcd001.ps2`
+  assert.equal(paths.saves?.match, 'unit')
+  assert.equal(paths.saves?.unit?.owns('BASCUS-97268RATCHET2', 'dir', card), true)
+  assert.equal(paths.saves?.unit?.owns('BASCUS-97199RATCHET', 'dir', card), true)
+  assert.equal(paths.saves?.unit?.owns('BADATA-SYSTEM', 'dir', card), false)
+  assert.equal(paths.saves?.unit?.note, undefined)
+  assert.equal(paths.saves?.unit?.shares?.('BASCUS-97268RATCHET2'), false)
+  assert.equal(paths.saves?.unit?.shares?.('BASCUS-97199RATCHET'), true)
+  // Still refused while RetroDECK or PCSX2 runs.
+  assert.ok(paths.saves?.unit?.busyWhile?.markers.includes('pcsx2-qt'))
+})
+
+test('RetroDECK PCSX2: without the GameDB, the serial alone, and the log is told why', () => {
+  for (const paths of [
+    onCard({ installDir: RD_INSTALL }),
+    onCard({ installDir: RD_INSTALL, gamedb: 'not a database' }),
+    onCard({ gamedb: PS2_GAMEDB })
+  ]) {
+    const card = `${MEMCARDS}/Mcd001.ps2`
+    assert.equal(paths.saves?.match, 'unit')
+    assert.equal(paths.saves?.unit?.owns('BASCUS-97268RATCHET2', 'dir', card), true)
+    assert.equal(paths.saves?.unit?.owns('BASCUS-97199RATCHET', 'dir', card), false)
+    assert.match(paths.saves?.unit?.note ?? '', /serial alone/)
+  }
+})
+
+test('RetroDECK PCSX2: of two ROMs under one serial, the one the GameDB names owns its folders', () => {
+  const card = `${MEMCARDS}/Mcd001.ps2`
+  const halfLife = onCard({
+    installDir: RD_INSTALL,
+    gamedb: PS2_GAMEDB,
+    rom: 'Half-Life (USA)',
+    saveTarget: 'BASLUS-20066',
+    romsSharing: 2
+  })
+  assert.equal(halfLife.saves?.unit?.owns('BASLUS-20066SYSTEM', 'dir', card), true)
+  assert.equal(halfLife.saves?.unit?.shares?.('BASLUS-20066SYSTEM'), false)
+  assert.equal(halfLife.saves?.unit?.note, undefined)
+
+  const blueShift = onCard({
+    installDir: RD_INSTALL,
+    gamedb: PS2_GAMEDB,
+    rom: 'Half-Life - Blue Shift (USA)',
+    saveTarget: 'BASLUS-20066',
+    romsSharing: 2
+  })
+  assert.equal(blueShift.saves?.unit?.owns('BASLUS-20066SYSTEM', 'dir', card), true)
+  assert.equal(blueShift.saves?.unit?.shares?.('BASLUS-20066SYSTEM'), true)
+  assert.match(blueShift.saves?.unit?.note ?? '', /Blue Shift.*another game/)
+})
+
+test('RetroDECK PCSX2: the only ROM under its serial owns it, whatever it is called', () => {
+  // Redump's name, not the GameDB's `Ratchet & Clank 2 - Going Commando`.
+  const paths = onCard({
+    installDir: RD_INSTALL,
+    gamedb: PS2_GAMEDB,
+    rom: 'Ratchet & Clank - Going Commando (USA)',
+    romsSharing: 1
+  })
+  assert.equal(paths.saves?.unit?.shares?.('BASCUS-97268RATCHET2'), false)
+  assert.equal(paths.saves?.unit?.note, undefined)
+})
+
+test('RetroDECK PCSX2: the count is asked for only where the ROM is not the GameDB’s name', () => {
+  const card = `${MEMCARDS}/Mcd001.ps2`
+  const ask = (rom: string): SavePaths =>
+    retroDeckUnit({
+      romPath: `${RD}/roms/ps2/${rom}.chd`,
+      system: 'ps2',
+      saveTarget: 'BASLUS-20066',
+      installDir: RD_INSTALL,
+      files: {
+        [`${MEMCARDS}/Mcd001.ps2/_pcsx2_superblock`]: 'superblock',
+        [RD_GAMEDB]: PS2_GAMEDB
+      },
+      dirs: { [MEMCARDS]: ['Mcd001.ps2'] }
+    })
+  assert.equal(ask('Half-Life (USA)').saves?.unit?.sharingKey, undefined)
+  const blueShift = ask('Half-Life - Blue Shift (USA)').saves?.unit
+  assert.ok(blueShift?.sharingKey)
+  // Until the count is in, the ROM owns what it owned before.
+  assert.equal(blueShift.shares?.('BASLUS-20066SYSTEM'), false)
+  assert.equal(blueShift.owns('BASLUS-20066SYSTEM', 'dir', card), true)
+  // Two readings of one serial count as one key.
+  assert.equal(blueShift.sharingKey('BASLUS-20066'), blueShift.sharingKey('SLUS-20066'))
+  assert.notEqual(blueShift.sharingKey('BASLUS-20066'), blueShift.sharingKey('SLUS-20067'))
+})
+
+test('RetroDECK PCSX2: where the count is unknown the ROM owns its serial, and says so', () => {
+  const paths = onCard({
+    installDir: RD_INSTALL,
+    gamedb: PS2_GAMEDB,
+    rom: 'Half-Life - Blue Shift (USA)',
+    saveTarget: 'BASLUS-20066',
+    romsSharing: null
+  })
+  assert.equal(paths.saves?.unit?.shares?.('BASLUS-20066SYSTEM'), false)
+  assert.match(paths.saves?.unit?.note ?? '', /unknown/)
+})
+
+test('RetroDECK PCSX2: a serial the GameDB cannot name is kept as another game’s', () => {
+  const paths = onCard({
+    installDir: RD_INSTALL,
+    gamedb: PS2_GAMEDB,
+    rom: 'Unknown Game (USA)',
+    saveTarget: 'SLUS-99999',
+    romsSharing: 2
+  })
+  assert.equal(paths.saves?.unit?.shares?.('BASLUS-99999X'), true)
+  assert.ok(paths.saves?.unit?.note)
 })
 
 test('RetroDECK PCSX2: without the ini, the one folder card there is', () => {

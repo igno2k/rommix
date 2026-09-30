@@ -19,6 +19,7 @@ import type {
   SaveSyncResult,
   SaveSyncState
 } from '@shared/types'
+import { hasMorePages } from '@shared/types'
 import { partialPathOf, refusedUs, verify } from './romm/index.ts'
 import { hashOf } from './integrity.ts'
 import { processesCarrying } from './host.ts'
@@ -183,8 +184,26 @@ interface LocalAsset {
    * echoes back to pick the asset — and every read and write goes through the
    * members instead.
    */
-  unit?: { dir: string; members: readonly string[]; carriedAs: 'archive' | 'file' }
+  unit?: {
+    dir: string
+    members: readonly string[]
+    /** Those of `members` another game owns too, which an upload never stamps. */
+    shared?: readonly string[]
+    /** File names inside the members that are not the save — `SaveUnit.ignoresInside`. */
+    ignores?: readonly string[]
+    carriedAs: 'archive' | 'file'
+  }
 }
+
+/** ROMs per page when counting a platform's save keys — see `SaveSync.romsSharing`. */
+const SAVE_KEY_PAGE = 500
+
+/**
+ * How long a walk of a platform's ROMs that failed is taken as the answer
+ * before it is tried again — long enough that a machine offline does not wait
+ * on the server at every save action.
+ */
+const SAVE_KEY_RETRY_MS = 10 * 60 * 1000
 
 /** One kind's files, ready to go, with what sending them needs. */
 interface UploadBatch {
@@ -274,13 +293,79 @@ export class SaveSync {
   }
 
   /**
+   * Per platform, the `save_target` of every ROM the server holds, for the
+   * rest of the session — see `SaveContext.saveTarget.romsSharing`. A walk
+   * that failed stands for `SAVE_KEY_RETRY_MS`, then is tried again.
+   */
+  private readonly saveKeys = new Map<
+    number,
+    { walk: Promise<readonly string[] | null>; failedAt?: number }
+  >()
+
+  /**
+   * How many ROMs of this one's platform the server files under its
+   * `save_target`, itself included, the two compared by `sharingKey`; null
+   * where the server could not say.
+   *
+   * RomM filters its listing by platform but not by key, so the platform's
+   * ROMs are walked once, without their files.
+   */
+  private async romsSharing(
+    rom: RommRom,
+    sharingKey: (saveTarget: string) => string | null
+  ): Promise<number | null> {
+    const own = rom.save_target ? sharingKey(rom.save_target) : null
+    if (!own || typeof rom.platform_id !== 'number') return null
+    let known = this.saveKeys.get(rom.platform_id)
+    if (known?.failedAt !== undefined && Date.now() - known.failedAt >= SAVE_KEY_RETRY_MS) {
+      known = undefined
+    }
+    if (!known) {
+      known = { walk: this.saveTargetsOf(rom.platform_id) }
+      this.saveKeys.set(rom.platform_id, known)
+    }
+    const targets = await known.walk
+    if (!targets) {
+      known.failedAt ??= Date.now()
+      return null
+    }
+    const count = targets.filter((target) => sharingKey(target) === own).length
+    return count > 0 ? count : null
+  }
+
+  private async saveTargetsOf(platformId: number): Promise<readonly string[] | null> {
+    const targets: string[] = []
+    try {
+      for (let offset = 0; ;) {
+        const page = await this.client.roms({
+          platform_ids: [platformId],
+          with_files: false,
+          order_by: 'id',
+          limit: SAVE_KEY_PAGE,
+          offset
+        })
+        for (const item of page.items) if (item.save_target) targets.push(item.save_target)
+        if (!hasMorePages(page) || page.items.length === 0) break
+        offset += page.items.length
+      }
+    } catch (cause) {
+      log.warn('saves', 'could not count the ROMs that share a save key', {
+        platformId,
+        reason: (cause as Error).message
+      })
+      return null
+    }
+    return targets
+  }
+
+  /**
    * Ask the emulator's descriptor where this game's saves live.
    *
    * Returns empty locations rather than throwing when the emulator is not
    * installed or its descriptor has gone: a game whose emulator was uninstalled
    * still has assets on the server worth listing.
    */
-  private locate(target: SaveTarget): SavePaths {
+  private async locate(target: SaveTarget): Promise<SavePaths> {
     const descriptor = emulatorById(target.emulator.id)
     if (!descriptor) return { saves: null, states: null }
 
@@ -303,7 +388,14 @@ export class SaveSync {
     }
 
     try {
-      const paths = descriptor.saves(context)
+      let paths = descriptor.saves(context)
+      // A rule that depends on how many ROMs share the key is asked again
+      // with the count — see `SaveUnit.sharingKey`.
+      const sharingKey = paths.saves?.unit?.sharingKey ?? paths.states?.unit?.sharingKey
+      if (sharingKey && context.saveTarget) {
+        const romsSharing = await this.romsSharing(target.rom, (key) => sharingKey(key))
+        paths = descriptor.saves({ ...context, saveTarget: { ...context.saveTarget, romsSharing } })
+      }
       // Where the descriptor decided this game's files are. Half of every save
       // sync question is "which folder did it look in", and it is a folder
       // nothing else in the log names.
@@ -319,6 +411,12 @@ export class SaveSync {
         tag: paths.emulator ?? null,
         unsyncableReason: localize(paths.unsyncableReason, i18n())
       })
+      const note = paths.saves?.unit?.note ?? paths.states?.unit?.note
+      if (note)
+        log.warn('saves', 'this game\u2019s save unit is narrower than its emulator\u2019s', {
+          romId: target.rom.id,
+          note
+        })
       return paths
     } catch (cause) {
       // A descriptor that fails to resolve a path is a bug, but not one worth
@@ -474,7 +572,11 @@ export class SaveSync {
   private async sameAsRemote(asset: LocalAsset, hash: string | null): Promise<boolean> {
     if (!hash) return false
     if (asset.unit?.carriedAs === 'archive') {
-      const local = await membersContentHash(asset.unit.dir, asset.unit.members)
+      const local = await membersContentHash(
+        asset.unit.dir,
+        asset.unit.members,
+        asset.unit.ignores ?? []
+      )
       return local !== null && local === hash.toLowerCase()
     }
     return !asset.isDirectory && sameContent(asset.path, hash)
@@ -514,7 +616,13 @@ export class SaveSync {
         fileName,
         mtimeMs: found.newest,
         isDirectory: true,
-        unit: { dir, members: found.members, carriedAs: 'archive' }
+        unit: {
+          dir,
+          members: found.members,
+          shared: found.shared,
+          ignores: unit.ignoresInside ?? [],
+          carriedAs: 'archive'
+        }
       }
     ]
   }
@@ -630,7 +738,7 @@ export class SaveSync {
         log.debug('saves', 'automatic pull is switched off', { romId: target.rom.id })
         return { written: 0, offered: 0, failed: 0 }
       }
-      const paths = this.locate(target)
+      const paths = await this.locate(target)
 
       const saves = await this.pullKind(target, paths, 'save')
       const states = await this.pullKind(target, paths, 'state')
@@ -660,7 +768,7 @@ export class SaveSync {
   async seed(target: SaveTarget, pulled: PullCount | null): Promise<SeedOutcome | null> {
     return this.oneAtATime(target.rom.id, async () => {
       if (!this.store.settings.syncSavesDown) return null
-      const seed = this.locate(target).seed
+      const seed = (await this.locate(target)).seed
       if (!seed) return null
       if ('skipped' in seed) {
         log.info('saves', 'no first-launch seed', { romId: target.rom.id, reason: seed.skipped })
@@ -720,7 +828,7 @@ export class SaveSync {
      */
     const byTag = { save: false, state: false }
     if (local) {
-      const paths = this.locate(local)
+      const paths = await this.locate(local)
       tag = this.tagFor(paths, local)
       for (const kind of ['save', 'state'] as const) {
         alsoAccepts[kind] = this.alsoAcceptedFor(paths, kind)
@@ -908,7 +1016,7 @@ export class SaveSync {
     onProgress?: (progress: SaveProgress) => void
   ): Promise<SaveSyncResult> {
     return this.oneAtATime(target.rom.id, async () => {
-      const paths = this.locate(target)
+      const paths = await this.locate(target)
       const run = progressRun(target.rom.id, 'pull', null, onProgress)
       const saves = await this.pullKind(target, paths, 'save', run)
       const states = await this.pullKind(target, paths, 'state', run)
@@ -945,7 +1053,7 @@ export class SaveSync {
     onProgress?: (progress: SaveProgress) => void
   ): Promise<SaveSyncResult> {
     return this.oneAtATime(target.rom.id, async () => {
-      const paths = this.locate(target)
+      const paths = await this.locate(target)
       const pushed = await this.upload(target, paths, 0, onProgress)
       const result = {
         ...pushed,
@@ -982,7 +1090,7 @@ export class SaveSync {
    * never wrote to, which is not worth a redundant archive to rule out.
    */
   async previewPush(target: SaveTarget, since = 0): Promise<SavePushPreview> {
-    const paths = this.locate(target)
+    const paths = await this.locate(target)
     const tag = this.tagFor(paths, target)
     const files: PendingSave[] = []
     let inSync = 0
@@ -1170,7 +1278,7 @@ export class SaveSync {
     chosen: readonly string[],
     onProgress?: (progress: SaveProgress) => void
   ): Promise<SaveSyncResult> {
-    const paths = this.locate(target)
+    const paths = await this.locate(target)
     const wanted = new Set(chosen)
     const tag = this.tagFor(paths, target)
     /** Which of the approved paths this side actually found again. */
@@ -1268,7 +1376,7 @@ export class SaveSync {
       // A unit's path names nothing on the disk: what is this game's in that
       // folder is its members, and only those go — each copied aside first,
       // the rest of the card being every other game's.
-      const location = local ? this.locationFor(this.locate(local), kind) : null
+      const location = local ? this.locationFor(await this.locate(local), kind) : null
       if (location?.match === 'unit' && location.unit)
         await this.ensureUnitIdle(location.unit, romId)
       if (location?.match === 'unit' && location.unit?.carriedAs === 'archive') {
@@ -1829,7 +1937,7 @@ export class SaveSync {
   ): Promise<{ saves: number; states: number; failed: number }> {
     return this.oneAtATime(target.rom.id, async () => {
       if (!this.store.settings.syncSavesUp) return { saves: 0, states: 0, failed: 0 }
-      return this.upload(target, this.locate(target), since)
+      return this.upload(target, await this.locate(target), since)
     })
   }
 
@@ -1939,7 +2047,7 @@ export class SaveSync {
           // A unit's archive holds its members and nothing else of the card.
           const count =
             asset.unit?.carriedAs === 'archive'
-              ? await zipMembers(asset.unit.dir, asset.unit.members, staged)
+              ? await zipMembers(asset.unit.dir, asset.unit.members, staged, asset.unit.ignores)
               : await zipDirectory(asset.path, staged)
           if (count === 0) {
             log.info('saves', 'save folder is empty, nothing to upload', {
@@ -2003,8 +2111,13 @@ export class SaveSync {
     if (!Number.isFinite(remoteTime)) return
     if (asset.unit?.carriedAs === 'archive') {
       for (const member of asset.unit.members) {
+        // Another game's too, and that game's sync keeps its date.
+        if (asset.unit.shared?.includes(member)) continue
         const path = join(asset.unit.dir, member)
-        for (const file of await walk(path)) await stampMtime(file, remoteTime)
+        for (const file of await walk(path)) {
+          if (!(asset.unit.ignores ?? []).includes(basename(file)))
+            await stampMtime(file, remoteTime)
+        }
         await stampMtime(path, remoteTime)
       }
       return

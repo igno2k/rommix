@@ -633,6 +633,11 @@ export interface RommPlaySessionEntry {
 /** Query parameters RomMix passes to GET /api/roms. */
 export interface RomQuery {
   search_term?: string
+  /**
+   * Each ROM's files as well. On unless a caller turns it off — see
+   * `RommClient.roms` — which one counting keys across a platform does.
+   */
+  with_files?: boolean
   platform_ids?: number[]
   collection_id?: number
   /** A collection RomM derived. Its id is a string — see `RommVirtualCollection`. */

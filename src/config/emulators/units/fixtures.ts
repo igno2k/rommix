@@ -85,6 +85,89 @@ export const PS2_CARD: FixtureTree = {
   'BADATA-SYSTEM/history': 'the console history every game appends to'
 }
 
+/**
+ * Entries of PCSX2's `GameIndex.yaml` as PCSX2 2.6 ships them, fields and
+ * comments included: Ratchet & Clank 2, which reads the first game's save;
+ * Monster Hunter, whose filters name the console's network settings and whose
+ * `name` is in kana; Futurama, which has no filters at all — most games are
+ * that one; Half-Life, whose serial RomM also files Blue Shift under; and The
+ * Legend of Spyro, whose `name-sort` is the way Redump names it.
+ */
+export const PS2_GAMEDB = `# PCSX2 Game Database!
+SCUS-97268:
+  name: "Ratchet & Clank 2 - Going Commando"
+  region: "NTSC-U"
+  compat: 5
+  gameFixes:
+    - EETimingHack # Fixes SPR errors while going in-game.
+  gsHWFixes:
+    autoFlush: 2
+    halfPixelOffset: 4 # Aligns post bloom.
+    nativeScaling: 1 # Fixes light blooms.
+  memcardFilters:
+    - "SCUS-97268"
+    - "SCUS-97199"
+SLPM-65495:
+  name: "モンスターハンター"
+  name-sort: "もんすたーはんたー"
+  name-en: "Monster Hunter"
+  region: "NTSC-J"
+  clampModes:
+    vuClampMode: 3 # Fixes lighting on character models.
+  gsHWFixes:
+    maximumBlendingLevel: 0 # Fixes unnecessary load on the GPU.
+  memcardFilters:
+    - "BISLPM-65286NET"
+    - "BWNETCNF"
+    - "SLPM-65495"
+SLUS-20439:
+  name: "Futurama"
+  region: "NTSC-U"
+  compat: 5
+  gsHWFixes:
+    readTCOnClose: 1 # Fixes render to target getting lost on state/switch.
+SLUS-20066:
+  name: "Half-Life"
+  region: "NTSC-U"
+  compat: 5
+SLUS-21820:
+  name: "The Legend of Spyro - Dawn of the Dragon"
+  name-sort: "Legend of Spyro, The - Dawn of the Dragon"
+  region: "NTSC-U"
+  compat: 5
+  gsHWFixes:
+    halfPixelOffset: 4 # Reduces post misalignment.
+    nativeScaling: 2 # Fixes remaining post misalignment.
+`
+
+/** The game with a filter: Ratchet & Clank 2, which reads Ratchet & Clank's save. */
+export const PS2_FILTER_KEY = 'SCUS-97268'
+export const PS2_FILTER_OWN: readonly string[] = ['BASCUS-97268RATCHET2']
+/** The first game's save, the second one's by its filter — and still the first one's. */
+export const PS2_FILTER_SHARED: readonly string[] = ['BASCUS-97199RATCHET']
+
+/**
+ * A card with both Ratchet games, Monster Hunter and the online data it reads,
+ * a game that has nothing to do with any of them, the console's system and
+ * network folders, and a file at the card's root whose
+ * name holds the first game's serial — no official software writes one there,
+ * and PCSX2 never shows one to a game.
+ */
+export const PS2_FILTER_CARD: FixtureTree = {
+  _pcsx2_superblock: 'PCSX2 folder card superblock',
+  _pcsx2_index: 'root index',
+  'BASCUS-97268RATCHET2/icon.sys': 'icon of Ratchet 2',
+  'BASCUS-97268RATCHET2/save': 'progress in Ratchet 2',
+  'BASCUS-97199RATCHET/icon.sys': 'icon of Ratchet 1',
+  'BASCUS-97199RATCHET/save': 'progress in Ratchet 1',
+  'BASLUS-20439Futurama/FUT00': 'progress in Futurama',
+  'BADATA-SYSTEM/history': 'the console history every game appends to',
+  'BWNETCNF/BWNETCNF': 'the network settings every online game reads',
+  'BISLPM-65495MH/save': 'progress in Monster Hunter',
+  'BISLPM-65286NET/data': 'the Monster Hunter online data it reads',
+  'SCUS-97199.txt': 'a stray file at the root'
+}
+
 // ---------------------------------------------------------------------------
 // Dolphin GCI folder
 // ---------------------------------------------------------------------------
