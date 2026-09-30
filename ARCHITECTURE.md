@@ -166,6 +166,17 @@ check, and writes `<RomMix>/config/save-setup.json`, whose shape is
 `SaveSetupReport` in `src/shared/types/system.ts`. bazzite-maint reads that
 file and re-reads each named file itself, instead of keeping its own table.
 
+Each item says enough to be checked again without RomMix's code. Besides
+`id`, `file`, `format`, `section`, `key`, `wanted`, `found`, `status`, `fix`
+and `reason` it carries three fields, added within `schema: 1` (a reader of
+the older shape ignores them):
+
+| Field          | Values                                                              | Meaning                                                                                                                                                                                                                                                                                                                                 |
+| -------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check`        | `"value"` \| `"folder-card"` \| `"system-label"` \| `"game-labels"` | `value`: `key` in `file` against `wanted`, for every plain setting. `folder-card`: whether the PCSX2 card `key` names is a folder card. `system-label`: the command ES-DE runs the system with. `game-labels`: every per-game override in the gamelist.                                                                                 |
+| `absentIsFine` | `true` \| `false`                                                   | A missing key or file counts as `wanted`.                                                                                                                                                                                                                                                                                               |
+| `compare`      | `"normalized"` \| `"exact"`                                         | `normalized` (every `value` item): `normalizeSetting` — trimmed, surrounding quotes dropped, case ignored, `1`/`yes`/`true` as `true`, `0`/`no`/`false` as `false`; INI sections and keys matched without case, RetroArch keys exactly. `exact` (the three derived checks): the strings as written, which is how ES-DE matches a label. |
+
 A fix only happens when someone confirms it in Settings. It is refused while a
 game or anything in RetroDECK's sandbox runs, through a link, and into a config
 file the emulator has not written yet. The file is copied into

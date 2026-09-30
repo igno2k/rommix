@@ -102,6 +102,23 @@ export interface SaveSetupItem {
   fix: 'edit' | 'report-only'
   /** Why it matters, in the language RomMix is set to. */
   reason: string
+  /**
+   * What is compared. `value`: `key` in `file` against `wanted`. The others
+   * compare something derived: `folder-card`, whether the card `key` names is a
+   * PCSX2 folder card (`found` is then `folder card` or the card's name);
+   * `system-label`, the command ES-DE runs the system with; `game-labels`,
+   * every per-game override in the gamelist, joined.
+   */
+  check: 'value' | 'folder-card' | 'system-label' | 'game-labels'
+  /** A key, or a file, that is not there counts as `wanted`. */
+  absentIsFine: boolean
+  /**
+   * How `found` is held against `wanted`. `normalized`: trimmed, surrounding
+   * quotes dropped, case ignored, and `1`/`yes`/`true` read as `true` and
+   * `0`/`no`/`false` as `false` (`normalizeSetting`); INI sections and keys are
+   * matched without case, RetroArch keys exactly. `exact`: as written.
+   */
+  compare: 'normalized' | 'exact'
 }
 
 /** Every save-relevant setting of one emulator install, and when it was read. */

@@ -114,7 +114,12 @@ export class SaveSetup {
       found: finding.found,
       status,
       fix: rule.fix,
-      reason: localize(rule.reason, i18n())
+      reason: localize(rule.reason, i18n()),
+      check: rule.check ?? 'value',
+      absentIsFine: rule.absentIsFine === true,
+      // Only a plain value goes through `normalizeSetting`; a label is ES-DE's
+      // own string and a folder card is RomMix's reading of the disk.
+      compare: rule.check ? 'exact' : 'normalized'
     }
   }
 

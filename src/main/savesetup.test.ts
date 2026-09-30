@@ -110,11 +110,36 @@ describe('the report', () => {
       found: 'disabled',
       status: 'drift',
       fix: 'edit',
-      reason: item(written, 'flycast.perContentVmu').reason
+      reason: item(written, 'flycast.perContentVmu').reason,
+      check: 'value',
+      absentIsFine: false,
+      compare: 'normalized'
     })
     assert.match(item(written, 'flycast.perContentVmu').reason, /VMU A1/)
     assert.equal(item(written, 'duckstation.perGameCard').status, 'missing-file')
     assert.deepEqual(readdirSync(rommix), [SAVE_SETUP_FILE])
+  })
+
+  test('says for every item how to check it again without RomMix', async () => {
+    const { setup, rommix } = rig()
+    await setup.check()
+    const written = JSON.parse(
+      readFileSync(join(rommix, SAVE_SETUP_FILE), 'utf8')
+    ) as SaveSetupReport
+    for (const one of written.items) {
+      assert.ok(['value', 'folder-card', 'system-label', 'game-labels'].includes(one.check), one.id)
+      assert.equal(typeof one.absentIsFine, 'boolean', one.id)
+      assert.equal(one.compare, one.check === 'value' ? 'normalized' : 'exact', one.id)
+    }
+    const shape = (id: string) => {
+      const found = item(written, id)
+      return [found.check, found.absentIsFine, found.compare]
+    }
+    assert.deepEqual(shape('flycast.perContentVmuOverride'), ['value', true, 'normalized'])
+    assert.deepEqual(shape('pcsx2.cardIsFolder'), ['folder-card', false, 'exact'])
+    assert.deepEqual(shape('esde.component.dreamcast'), ['system-label', false, 'exact'])
+    assert.deepEqual(shape('esde.games.dreamcast'), ['game-labels', true, 'exact'])
+    assert.equal(written.schema, 1)
   })
 
   test(
