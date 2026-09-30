@@ -36,6 +36,7 @@ import {
   LANGUAGE_NAMES,
   LOCALES
 } from '../src/shared/i18n/index.ts'
+import { repository } from './repository.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const OUT = resolve(ROOT, 'out/site')
@@ -64,8 +65,12 @@ const flags = LOCALES.map(
   // starts a line of its own and has to carry its own.
 ).join('\n      ')
 
+/** The repository the page links to, and whose GitHub Pages it is published on. */
+const REPOSITORY = repository(ROOT)
+const [OWNER, NAME] = REPOSITORY.split('/')
+
 /** Where the published site lives, for the `hreflang` links search engines want. */
-const SITE = 'https://leclercb.github.io/rommix'
+const SITE = `https://${OWNER}.github.io/${NAME}`
 
 /** The language the site is served from its root, and the one others fall back to. */
 const DEFAULT = 'en'
@@ -112,7 +117,9 @@ async function render(template, locale) {
     languages,
     'languages.current': name(locale),
     alternates,
-    flags
+    flags,
+    repository: `https://github.com/${REPOSITORY}`,
+    'repository.name': REPOSITORY
   }
 
   const rendered = template.replace(/\{\{(@?[\w.]+)\}\}/g, (whole, key) => {
@@ -130,7 +137,9 @@ async function render(template, locale) {
     }
     if (!(key in page)) throw new Error(`${locale}: site/text/${locale}.json has no ${key}`)
     used.add(key)
-    return page[key]
+    // The one placeholder a sentence may carry: its links to the project are
+    // wherever this copy is published from.
+    return page[key].replaceAll('{{repository}}', fixed.repository)
   })
 
   const spare = Object.keys(page).filter((key) => !key.startsWith('_') && !used.has(key))

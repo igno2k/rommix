@@ -35,8 +35,30 @@ import { t } from './i18n.ts'
  * a swap costs nobody a game in progress.
  */
 
+declare const UPDATE_REPOSITORY: string | undefined
+
+/**
+ * The GitHub repository this copy updates itself from, `owner/name` — or null
+ * where the build was not stamped with one, and there is nowhere to look.
+ *
+ * Stamped at build time from package.json's `repository`, like `BUILD_COMMIT`
+ * and reached the same way — see `define` in electron.vite.config.ts. So a fork
+ * that sets the field updates from its own releases, and never from the ones
+ * it forked from: those would replace it with a build that is not it. Null is
+ * a refusal rather than a default for the same reason.
+ */
+export function updateRepository(): string | null {
+  const stamped = typeof UPDATE_REPOSITORY === 'string' ? UPDATE_REPOSITORY : ''
+  return /^[\w.-]+\/[\w.-]+$/.test(stamped) ? stamped : null
+}
+
+/** One of the repository's API endpoints. */
+function endpoint(path: string): string {
+  return `https://api.github.com/repos/${updateRepository() ?? ''}/${path}`
+}
+
 /** RomMix's own releases. `/latest` is the newest non-draft, non-prerelease. */
-const RELEASE_API = 'https://api.github.com/repos/leclercb/rommix/releases/latest'
+const RELEASE_API = (): string => endpoint('releases/latest')
 
 /**
  * The same releases as a list, for an installation that takes candidates.
@@ -45,7 +67,7 @@ const RELEASE_API = 'https://api.github.com/repos/leclercb/rommix/releases/lates
  * it will not pick is a pre-release — so taking those means reading the list and
  * choosing here. A page is far more releases than any copy of RomMix is behind.
  */
-const RELEASE_LIST_API = 'https://api.github.com/repos/leclercb/rommix/releases?per_page=30'
+const RELEASE_LIST_API = (): string => endpoint('releases?per_page=30')
 
 /**
  * The rolling pre-release holding the tip of `main`, one commit at a time.
@@ -57,7 +79,7 @@ const RELEASE_LIST_API = 'https://api.github.com/repos/leclercb/rommix/releases?
  * `canaryWanted`.
  */
 const CANARY_TAG = 'canary'
-const CANARY_API = `https://api.github.com/repos/leclercb/rommix/releases/tags/${CANARY_TAG}`
+const CANARY_API = (): string => endpoint(`releases/tags/${CANARY_TAG}`)
 
 /**
  * The commit the canary tag names, which is what the images on its release
@@ -89,11 +111,13 @@ const CANARY_API = `https://api.github.com/repos/leclercb/rommix/releases/tags/$
  * `vnd.github.sha` answers with the commit alone, rather than the commit with
  * its diff attached.
  */
-const CANARY_COMMIT_API = `https://api.github.com/repos/leclercb/rommix/commits/${CANARY_TAG}`
+const CANARY_COMMIT_API = (): string => endpoint(`commits/${CANARY_TAG}`)
 const CANARY_COMMIT_ACCEPT = 'application/vnd.github.sha'
 
 /** Where to send someone whose copy cannot replace itself. */
-export const RELEASES_PAGE = 'https://github.com/leclercb/rommix/releases'
+export function releasesPage(): string {
+  return `https://github.com/${updateRepository() ?? ''}/releases`
+}
 
 declare const BUILD_COMMIT: string | undefined
 
@@ -547,8 +571,10 @@ export class Updater {
     // and a panel showing an error beside "last checked: never" reads as a
     // check that never ran.
     const canary = canaryWanted()
-    if (canary && !runningCommit()) {
-      const refusal = t('update.noBuildCommit')
+    // The same exit for a build that does not know where its releases are: a
+    // check against no repository is a request to a URL nobody meant.
+    if (!updateRepository() || (canary && !runningCommit())) {
+      const refusal = updateRepository() ? t('update.noBuildCommit') : t('update.noRepository')
       log.error('update', 'could not check for a new version', new Error(refusal))
       this.update({
         state: 'error',
@@ -567,10 +593,10 @@ export class Updater {
 
     // Named here rather than inside, so a failure can say what was asked.
     const api = canary
-      ? CANARY_API
+      ? CANARY_API()
       : this.store.settings.updatePrereleases
-        ? RELEASE_LIST_API
-        : RELEASE_API
+        ? RELEASE_LIST_API()
+        : RELEASE_API()
 
     try {
       // The tag first, so that a channel which cannot be compared fails on the
@@ -617,7 +643,7 @@ export class Updater {
           state: 'idle',
           latest,
           checkedAt,
-          url: release.html_url ?? RELEASES_PAGE,
+          url: release.html_url ?? releasesPage(),
           // Notes belong to a version that is no longer news. The block, on the
           // other hand, is a fact about this installation and worth stating
           // before there is an update it would stop — which is why it is
@@ -668,7 +694,7 @@ export class Updater {
         latest,
         checkedAt,
         notes: notesOf(release.body),
-        url: release.html_url ?? RELEASES_PAGE,
+        url: release.html_url ?? releasesPage(),
         blockedReason,
         receivedBytes: 0,
         totalBytes: this.pending?.sizeBytes ?? 0
@@ -713,7 +739,7 @@ export class Updater {
 
   /** The commit the canary tag resolves to. See `CANARY_COMMIT_API`. */
   private async canaryCommit(): Promise<string> {
-    const response = await this.ask(CANARY_COMMIT_API, CANARY_COMMIT_ACCEPT)
+    const response = await this.ask(CANARY_COMMIT_API(), CANARY_COMMIT_ACCEPT)
     const commit = (await response.text()).trim()
     // A media type GitHub stopped honouring, or an annotated tag where the job
     // writes a lightweight one: either way what came back describes a commit

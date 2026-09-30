@@ -963,6 +963,8 @@ export const de: Catalog = {
     'RomMix und drücken Sie erneut auf Spielen — die neue Version liegt bereits an ihrem Platz.',
   'update.noBuildForMachine': 'Release {version} hat keinen Build für diesen Rechner ({arch}).',
   'update.noVersionTag': 'Das neueste Release hat kein Versions-Tag',
+  'update.noRepository':
+    'Dieser Build gibt nicht an, aus welchem Repository seine Releases kommen, daher kann er nicht nach einer neueren Version suchen.',
   'update.noBuildCommit':
     'Dieser Build trägt keinen Commit, deshalb kann RomMix ihn nicht vom Canary-Build unterscheiden.',
   'update.noCanaryCommit': 'Das Canary-Tag benennt keinen Commit.',

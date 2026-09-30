@@ -953,6 +953,8 @@ export const fr: Catalog = {
     'et appuyez de nouveau sur Jouer — la nouvelle version est déjà en place.',
   'update.noBuildForMachine': 'La version {version} n’a aucun build pour cette machine ({arch}).',
   'update.noVersionTag': 'La version la plus récente n’a pas d’étiquette de version',
+  'update.noRepository':
+    "Cette version n'indique pas de quel dépôt viennent ses mises à jour : elle ne peut donc pas en chercher une plus récente.",
   'update.noBuildCommit':
     'Cette version ne porte aucun commit, RomMix ne peut donc pas la distinguer de la version canary.',
   'update.noCanaryCommit': 'L’étiquette canary ne désigne aucun commit.',

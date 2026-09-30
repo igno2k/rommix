@@ -942,6 +942,8 @@ export const en = {
     'Play again — the new version is already in place.',
   'update.noBuildForMachine': 'Release {version} has no build for this machine ({arch}).',
   'update.noVersionTag': 'The newest release has no version tag',
+  'update.noRepository':
+    'This build does not say which repository its releases come from, so it cannot look for a newer one.',
   'update.noBuildCommit':
     'This build carries no commit, so RomMix cannot tell it apart from the canary one.',
   'update.noCanaryCommit': 'The canary tag does not name a commit.',

@@ -639,7 +639,7 @@ function previewUpdate(): UpdateStatus {
     // nobody watching it is running.
     buildCommit: null,
     notes: null,
-    url: 'https://github.com/leclercb/rommix/releases',
+    url: `https://github.com/${import.meta.env.VITE_ROMMIX_REPOSITORY ?? 'leclercb/rommix'}/releases`,
     receivedBytes: 0,
     totalBytes: 0,
     readyPath: null,

@@ -6,7 +6,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { UpdatePolicy, UpdateStatus } from '@shared/types'
-import { Updater } from './update.ts'
+import { repository, repositoryOf } from '../../scripts/repository.mjs'
+import { updateRepository, Updater } from './update.ts'
 import { Store } from './store.ts'
 
 /**
@@ -43,8 +44,21 @@ function resourcesAt(dir: string | undefined): void {
   Object.defineProperty(process, 'resourcesPath', { value: dir, configurable: true })
 }
 
+/**
+ * The repository a shipped build is stamped with — see `updateRepository`. The
+ * upstream one throughout, so every URL below reads as the real one; the tests
+ * that are about the stamp set their own.
+ */
+const UPSTREAM = 'leclercb/rommix'
+
+function stampedWith(stamp: string | undefined): void {
+  if (stamp === undefined) delete (globalThis as { UPDATE_REPOSITORY?: string }).UPDATE_REPOSITORY
+  else (globalThis as { UPDATE_REPOSITORY?: string }).UPDATE_REPOSITORY = stamp
+}
+
 before(() => {
   app.getVersion = () => '1.0.0'
+  stampedWith(UPSTREAM)
 })
 
 const realRelaunch = app.relaunch
@@ -59,6 +73,7 @@ afterEach(() => {
   if (heldCanary === undefined) delete process.env.ROMMIX_CANARY
   else process.env.ROMMIX_CANARY = heldCanary
   delete (globalThis as { BUILD_COMMIT?: string }).BUILD_COMMIT
+  stampedWith(UPSTREAM)
   resourcesAt(heldResources)
   for (const dir of scratches.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
@@ -675,5 +690,51 @@ describe('the timer', () => {
     subject.schedule()
     subject.stop()
     subject.stop()
+  })
+})
+
+describe('where updates come from', () => {
+  test('a fork looks for its own releases, never the ones it forked from', async () => {
+    stampedWith('igno2k/rommix')
+    const { updater: subject } = updater()
+    const asked = serve(() => release('v0.9.0', [image]))
+
+    await subject.check()
+
+    assert.deepEqual(asked, ['https://api.github.com/repos/igno2k/rommix/releases/latest'])
+  })
+
+  test('a build stamped with no repository asks nobody, and says why', async () => {
+    stampedWith(undefined)
+    const { updater: subject } = updater()
+    const asked = serve(() => release('v9.9.9', [image]))
+
+    const status = await subject.check()
+
+    assert.deepEqual(asked, [])
+    assert.equal(status.state, 'error')
+    assert.match(status.error ?? '', /repository/)
+  })
+
+  test('a stamp that is not owner/name is none', () => {
+    stampedWith('https://evil.example/x')
+    assert.equal(updateRepository(), null)
+    stampedWith('igno2k/rommix')
+    assert.equal(updateRepository(), 'igno2k/rommix')
+  })
+
+  test('package.json names the repository in every shape npm accepts, and this one names the fork', () => {
+    for (const shape of [
+      'igno2k/rommix',
+      'github:igno2k/rommix',
+      'https://github.com/igno2k/rommix.git',
+      { url: 'git+https://github.com/igno2k/rommix.git' },
+      { url: 'git@github.com:igno2k/rommix.git' }
+    ]) {
+      assert.equal(repositoryOf({ repository: shape }), 'igno2k/rommix', JSON.stringify(shape))
+    }
+    assert.throws(() => repositoryOf({}))
+    assert.throws(() => repositoryOf({ repository: 'https://gitlab.com/a/b' }))
+    assert.equal(repository(), 'igno2k/rommix')
   })
 })

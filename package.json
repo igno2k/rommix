@@ -4,6 +4,10 @@
   "description": "Big Picture style front end for your own RomM server on Linux: browse your library, download a game, play it, and your saves go back to RomM",
   "license": "MIT",
   "author": "Benjamin Leclerc",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/igno2k/rommix.git"
+  },
   "main": "./out/main/index.js",
   "engines": {
     "node": ">=24"

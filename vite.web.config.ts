@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { repository } from './scripts/repository.mjs'
 
 /**
  * The version, for the demo's Settings screen to print.
@@ -117,7 +118,8 @@ export default defineConfig({
   plugins: [react(), withoutCsp(), demoLabels()],
   define: {
     'import.meta.env.VITE_WEB_PREVIEW': 'true',
-    'import.meta.env.VITE_ROMMIX_VERSION': JSON.stringify(version)
+    'import.meta.env.VITE_ROMMIX_VERSION': JSON.stringify(version),
+    'import.meta.env.VITE_ROMMIX_REPOSITORY': JSON.stringify(repository())
   },
   // Beside the landing page rather than under it: `scripts/build-site.sh`
   // assembles both halves of the site into `out/site`, which is what the Pages

@@ -980,12 +980,7 @@
           <!-- The count is filled in by the script at the foot of the page, which
                also puts the exact figure in the label — what is rendered here is
                the link, which is the part worth having either way. -->
-          <a
-            class="stars"
-            href="https://github.com/leclercb/rommix"
-            rel="noopener"
-            aria-label="leclercb/rommix"
-          >
+          <a class="stars" href="{{repository}}" rel="noopener" aria-label="{{repository.name}}">
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <use href="#mark-github" />
             </svg>
@@ -1071,7 +1066,7 @@
           -->
           <a
             class="button primary download"
-            href="https://github.com/leclercb/rommix/releases/latest/download/RomMix-x86_64.AppImage"
+            href="{{repository}}/releases/latest/download/RomMix-x86_64.AppImage"
             aria-describedby="release-file"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1089,7 +1084,7 @@
             </svg>
             {{action.demo}}
           </a>
-          <a class="button" href="https://github.com/leclercb/rommix">
+          <a class="button" href="{{repository}}">
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <use href="#mark-github" />
             </svg>
@@ -1114,7 +1109,7 @@
             >AppImage<span class="release__version"></span
             ><span class="release__arch">x86_64</span></span
           >
-          <a href="https://github.com/leclercb/rommix/releases">{{action.otherDownloads}}</a>
+          <a href="{{repository}}/releases">{{action.otherDownloads}}</a>
         </p>
 
         <!--
@@ -1865,13 +1860,13 @@
             </svg>
             {{footer.demo}}
           </a>
-          <a href="https://github.com/leclercb/rommix">
+          <a href="{{repository}}">
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <use href="#mark-github" />
             </svg>
             GitHub
           </a>
-          <a href="https://github.com/leclercb/rommix/releases">
+          <a href="{{repository}}/releases">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 3v12" />
               <path d="m7 10 5 5 5-5" />
@@ -1879,7 +1874,7 @@
             </svg>
             {{footer.releases}}
           </a>
-          <a href="https://github.com/leclercb/rommix#readme">
+          <a href="{{repository}}#readme">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
@@ -1944,7 +1939,7 @@
       files `.github/workflows/pages.yml` watches.
     -->
     <script>
-      const REPO = 'leclercb/rommix'
+      const REPO = '{{repository.name}}'
 
       const github = (path) =>
         fetch(`https://api.github.com/repos/${REPO}${path}`, {

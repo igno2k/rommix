@@ -19,6 +19,7 @@
 // replaces its own image in place, and a name that changed with the release
 // would break every shortcut pointing at it.
 import { readFileSync } from 'node:fs'
+import { repository } from './repository.mjs'
 
 const [version] = process.argv.slice(2)
 if (!version) {
@@ -26,7 +27,7 @@ if (!version) {
   process.exit(1)
 }
 
-const REPOSITORY = 'https://github.com/leclercb/rommix'
+const REPOSITORY = `https://github.com/${repository()}`
 const markdown = readFileSync('CHANGELOG.md', 'utf8')
 
 /**

@@ -944,6 +944,8 @@ export const es: Catalog = {
   'update.noBuildForMachine':
     'La versión {version} no tiene ninguna compilación para esta máquina ({arch}).',
   'update.noVersionTag': 'La versión más reciente no tiene etiqueta de versión',
+  'update.noRepository':
+    'Esta compilación no indica de qué repositorio vienen sus versiones, así que no puede buscar una más reciente.',
   'update.noBuildCommit':
     'Esta compilación no lleva ningún commit, así que RomMix no puede distinguirla de la canary.',
   'update.noCanaryCommit': 'La etiqueta canary no designa ningún commit.',

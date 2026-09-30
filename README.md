@@ -295,9 +295,10 @@ emulator RomMix installed live in `~/rommix`. Set a new path and RomMix copies
 it across and restarts; ROMs and emulators stay where they are. `ROMMIX_HOME`
 overrides it.
 
-**System → Updates.** Nothing updates an AppImage for you, so RomMix checks its
-own [releases](https://github.com/leclercb/rommix/releases) shortly after
-starting, then every few hours.
+**System → Updates.** Nothing updates an AppImage for you, so RomMix checks the
+releases of the repository it was built from — the `repository` field of
+`package.json`, which a fork sets to its own — shortly after starting, then
+every few hours.
 
 - **Automatic**, the default — downloaded in the background, used at the next
   start. Nothing restarts on its own; **Restart now** is there if you want it.

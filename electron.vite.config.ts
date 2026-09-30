@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { repository } from './scripts/repository.mjs'
 
 /**
  * The commit this bundle is built from, stamped into the main process.
@@ -48,7 +49,12 @@ export default defineConfig({
     // The main process alone: nothing the renderer draws is decided by which
     // commit built it, and a constant in the bundle the browser loads is one
     // more thing the web preview would have to be told about.
-    define: { BUILD_COMMIT: JSON.stringify(buildCommit()) },
+    // And the repository it updates itself from, which a fork changes in
+    // package.json and nowhere else. See `updateRepository` in update.ts.
+    define: {
+      BUILD_COMMIT: JSON.stringify(buildCommit()),
+      UPDATE_REPOSITORY: JSON.stringify(repository())
+    },
     resolve: {
       alias: { '@shared': resolve('src/shared'), '@config': resolve('src/config') }
     },

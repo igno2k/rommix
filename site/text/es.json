@@ -71,11 +71,11 @@
   "emulators.flatpakAndAppImage": "Flatpak y AppImage",
 
   "getting.title": "Descargar",
-  "getting.lede": "Requiere Linux, un servidor RomM en la versión 5 o posterior, y uno de los emuladores de arriba. Coge la AppImage de la <a href=\"https://github.com/leclercb/rommix/releases\">página de versiones</a> y ejecútala &mdash; elige <code>x86_64</code> o <code>arm64</code> según la arquitectura de tu máquina.",
+  "getting.lede": "Requiere Linux, un servidor RomM en la versión 5 o posterior, y uno de los emuladores de arriba. Coge la AppImage de la <a href=\"{{repository}}/releases\">página de versiones</a> y ejecútala &mdash; elige <code>x86_64</code> o <code>arm64</code> según la arquitectura de tu máquina.",
   "getting.note": "Sin número de versión en el nombre del archivo: las actualizaciones se escriben encima de ese mismo archivo.",
   "getting.steamTitle": "Desde Steam",
   "getting.steamBody": "Descarga <code>rommix-steam.sh</code> de la misma versión, guárdalo <strong>junto</strong> a la AppImage, y añade <strong>el script</strong> como juego ajeno a Steam — no la AppImage en sí.",
-  "getting.steamNote": "Steam no puede lanzar una AppImage directamente. El <a href=\"https://github.com/leclercb/rommix#readme\">README</a> explica cómo compilar RomMix, y los emuladores que no arrancan.",
+  "getting.steamNote": "Steam no puede lanzar una AppImage directamente. El <a href=\"{{repository}}#readme\">README</a> explica cómo compilar RomMix, y los emuladores que no arrancan.",
 
   "footer.demo": "Demo",
   "footer.releases": "Versiones",
