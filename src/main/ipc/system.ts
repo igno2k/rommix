@@ -192,7 +192,12 @@ export function registerSystemIpc(rommix: RomMixApp, handle: Handle): void {
       log.error('savesetup', 'could not check the save-relevant emulator settings', cause)
       return null
     })
-    const drifted = saveSetup?.items.filter((item) => item.status !== 'ok').length ?? 0
+    // A config file that is not there yet is one the emulator has never
+    // written, so nothing it saves can have gone wrong: listed in the panel,
+    // not counted as a problem.
+    const drifted =
+      saveSetup?.items.filter((item) => item.status !== 'ok' && item.status !== 'missing-file')
+        .length ?? 0
     if (drifted > 0) notes.push(t('diagnostics.saveSetupOff', { count: drifted }))
 
     return {

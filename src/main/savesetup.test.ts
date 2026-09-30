@@ -114,7 +114,7 @@ describe('the report', () => {
     })
     assert.match(item(written, 'flycast.perContentVmu').reason, /VMU A1/)
     assert.equal(item(written, 'duckstation.perGameCard').status, 'missing-file')
-    assert.equal(existsSync(join(rommix, `${SAVE_SETUP_FILE}.tmp`)), false)
+    assert.deepEqual(readdirSync(rommix), [SAVE_SETUP_FILE])
   })
 
   test(
@@ -250,4 +250,11 @@ test('the running check finds the sandbox by its id and never itself or ps', () 
   assert.deepEqual(carrying(ps, 'net.retrodeck.retrodeck', 400), [
     '100 /usr/bin/bwrap --args 42 -- net.retrodeck.retrodeck'
   ])
+})
+
+test('two checks at once leave one whole report', async () => {
+  const { setup, rommix } = rig()
+  await Promise.all([setup.check(), setup.check(), setup.check()])
+  assert.equal(JSON.parse(readFileSync(join(rommix, SAVE_SETUP_FILE), 'utf8')).schema, 1)
+  assert.deepEqual(readdirSync(rommix), [SAVE_SETUP_FILE])
 })

@@ -13,7 +13,15 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PS2_CARD, PS2_OWNED, type FixtureTree } from '@config/emulators/units/fixtures.ts'
-import { extractZip, isZip, zipDirectory, zipMembers, zipRoots } from './zip.ts'
+import {
+  extractZip,
+  isZip,
+  membersContentHash,
+  zipContentHash,
+  zipDirectory,
+  zipMembers,
+  zipRoots
+} from './zip.ts'
 
 /**
  * The zip writer, round-tripped.
@@ -400,3 +408,59 @@ test(
     ])
   }
 )
+
+/**
+ * What RomM records as `content_hash` for the fixture card's two save folders,
+ * zipped here — computed by RomM's own `hash_zip_contents`, run with Python's
+ * `zipfile` over the archive `zipMembers` writes. Pinned, so a change to either
+ * side of the transcription fails here rather than as every pull refused.
+ */
+const ROMM_CONTENT_HASH = '9451d2d60d9692b2abaa142eb0764ea5'
+
+test('an archive hashes the way RomM hashes it, by what is in it', async () => {
+  const root = scratch()
+  plant(join(root, 'card'), PS2_CARD)
+  const zipPath = join(root, 'unit.zip')
+  await zipMembers(join(root, 'card'), PS2_OWNED, zipPath)
+
+  assert.equal(await zipContentHash(zipPath), ROMM_CONTENT_HASH)
+  // And the files on the disk to the same, without an archive being made.
+  assert.equal(await membersContentHash(join(root, 'card'), PS2_OWNED), ROMM_CONTENT_HASH)
+})
+
+/** Is the system `zip` there, to write an archive some other way than RomMix does? */
+function haveZip(): boolean {
+  try {
+    execFileSync('zip', ['-v'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+test('the content hash ignores how an archive was made', { skip: !haveZip() }, async () => {
+  const root = scratch()
+  plant(join(root, 'CARD'), { 'a/one': '1', 'b/two': '2' })
+  await zipDirectory(join(root, 'CARD'), join(root, 'mine.zip'))
+  // Another writer's archive, with its folder entries, which do not count.
+  const other = join(root, 'other.zip')
+  execFileSync('zip', ['-q', '-r', '-9', other, 'b', 'a'], { cwd: join(root, 'CARD') })
+  assert.equal(await zipContentHash(other), await zipContentHash(join(root, 'mine.zip')))
+})
+
+test('the content hash follows what is in the files', async () => {
+  const root = scratch()
+  plant(join(root, 'CARD'), { 'a/one': '1', 'b/two': '2' })
+  await zipDirectory(join(root, 'CARD'), join(root, 'mine.zip'))
+  assert.equal(
+    await membersContentHash(join(root, 'CARD'), ['a', 'b']),
+    await zipContentHash(join(root, 'mine.zip'))
+  )
+
+  writeFileSync(join(root, 'CARD', 'a', 'one'), 'changed')
+  assert.notEqual(
+    await membersContentHash(join(root, 'CARD'), ['a', 'b']),
+    await zipContentHash(join(root, 'mine.zip'))
+  )
+  assert.equal(await membersContentHash(join(root, 'CARD'), ['none']), null)
+})

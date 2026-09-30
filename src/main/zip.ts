@@ -1,11 +1,13 @@
 import { createWriteStream } from 'node:fs'
 import { mkdir, open, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { crc32, deflateRaw } from 'node:zlib'
 import { dirname, join, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { safeJoin } from './safepath.ts'
 import yauzl from 'yauzl'
+import { hashOf } from './integrity.ts'
 import { log } from './log.ts'
 import { t } from './i18n.ts'
 
@@ -285,6 +287,14 @@ export async function zipMembers(
   members: readonly string[],
   zipPath: string
 ): Promise<number> {
+  return writeZip(dir, await memberEntries(dir, members), zipPath)
+}
+
+/**
+ * The files `zipMembers` archives for these members, relative to `dir` — a
+ * folder member as every file under it, a file member as itself.
+ */
+export async function memberEntries(dir: string, members: readonly string[]): Promise<string[]> {
   const names: string[] = []
   for (const member of members) {
     const path = join(dir, member)
@@ -293,17 +303,89 @@ export async function zipMembers(
     if (info.isDirectory()) names.push(...(await entryNamesUnder(path, member)))
     else names.push(member)
   }
-  return writeZip(dir, names, zipPath)
+  return names
+}
+
+// ---------------------------------------------------------------------------
+// RomM's content hash
+// ---------------------------------------------------------------------------
+
+/**
+ * The `content_hash` RomM records for an archive: not the md5 of its bytes,
+ * but of its contents — each file's name and md5, sorted by name, one per
+ * line. `hash_zip_contents` in RomM's `handler/filesystem/assets_handler.py`,
+ * transcribed. Two archives of the same files hash alike however they were
+ * compressed, which is what lets a save zipped here and one zipped by Argosy
+ * be recognised as the same save.
+ */
+function combinedHash(entries: readonly { name: string; md5: string }[]): string {
+  const lines = [...entries]
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((entry) => `${entry.name}:${entry.md5}`)
+  return createHash('md5').update(lines.join('\n')).digest('hex')
+}
+
+/** RomM's content hash of the archive at `zipPath`. See `combinedHash`. */
+export async function zipContentHash(zipPath: string): Promise<string> {
+  const entries: { name: string; md5: string }[] = []
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    yauzl.open(zipPath, { lazyEntries: true, autoClose: true }, (err, zipfile) => {
+      if (err || !zipfile) return rejectPromise(err ?? new Error(t('error.cannotOpenArchive')))
+      const fail = (cause: unknown): void => {
+        zipfile.close()
+        rejectPromise(cause)
+      }
+      zipfile.on('error', fail)
+      zipfile.on('end', () => resolvePromise())
+      zipfile.on('entry', (entry: yauzl.Entry) => {
+        if (entry.fileName.endsWith('/')) {
+          zipfile.readEntry()
+          return
+        }
+        zipfile.openReadStream(entry, (streamErr, stream) => {
+          if (streamErr || !stream) return fail(streamErr ?? new Error(t('error.badZipEntry')))
+          const md5 = createHash('md5')
+          stream.on('data', (chunk: Buffer) => md5.update(chunk))
+          stream.on('error', fail)
+          stream.on('end', () => {
+            entries.push({ name: entry.fileName, md5: md5.digest('hex') })
+            zipfile.readEntry()
+          })
+        })
+      })
+      zipfile.readEntry()
+    })
+  })
+  return combinedHash(entries)
+}
+
+/**
+ * The same hash of files on the disk, as `zipMembers` would archive them —
+ * so a unit can be compared with the copy RomM holds without zipping it. Null
+ * where there is no file to hash.
+ */
+export async function membersContentHash(
+  dir: string,
+  members: readonly string[]
+): Promise<string | null> {
+  const entries: { name: string; md5: string }[] = []
+  for (const name of await memberEntries(dir, members)) {
+    const md5 = await hashOf(join(dir, name), 'md5').catch(() => null)
+    if (md5 === null) return null
+    entries.push({ name, md5 })
+  }
+  return entries.length > 0 ? combinedHash(entries) : null
 }
 
 /**
  * Write the files `names`, relative to `dir`, into one archive.
  *
  * In code-unit order and with every timestamp zero, so the same files make the
- * same bytes on every device and at every upload: RomM files a slot upload by
- * the md5 of what arrives, and two devices pushing one unchanged save would
- * otherwise send two different archives of it. The order is compared as code
- * units rather than collated, which is the machine's setting.
+ * same bytes on every device and at every upload — an archive that differs
+ * only in when it was made is one nobody can compare by its bytes. RomM itself
+ * compares archives by what is in them, which does not depend on this; see
+ * `zipContentHash`. The order is compared as code units rather than collated,
+ * which is the machine's setting.
  */
 async function writeZip(
   dir: string,

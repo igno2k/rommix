@@ -1,4 +1,5 @@
 import { chmod, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { applySaveSetupRule, evaluateSaveSetup, saveSetupTarget } from '@config/emulators'
 import type {
@@ -215,7 +216,9 @@ export class SaveSetup {
 /** Write JSON beside its destination and rename it over, so a reader never sees half. */
 async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
-  const tmp = `${path}.tmp`
+  // Named per write: the start-up check and a pre-flight check can overlap,
+  // and two writers sharing one temporary name can rename half of the other's.
+  const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`
   await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
   await rename(tmp, path)
 }

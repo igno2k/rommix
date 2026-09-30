@@ -20,6 +20,7 @@ import type {
   SaveSyncState
 } from '@shared/types'
 import { partialPathOf, refusedUs, verify } from './romm/index.ts'
+import { hashOf } from './integrity.ts'
 import { safeJoin } from './safepath.ts'
 import type { RommClient } from './romm/index.ts'
 import type { Store } from './store.ts'
@@ -54,7 +55,7 @@ import {
 } from './savepairing.ts'
 import { progressRun, type SaveRun } from './saveprogress.ts'
 import { findUnit, removeUnit, restoreUnit } from './saveunits.ts'
-import { extractZip, zipDirectory, zipMembers } from './zip.ts'
+import { extractZip, membersContentHash, zipContentHash, zipDirectory, zipMembers } from './zip.ts'
 
 /**
  * Two-way save and save-state sync between RomM and the local emulator tree.
@@ -432,6 +433,23 @@ export class SaveSync {
   }
 
   /**
+   * Does this asset hold what RomM's `content_hash` describes?
+   *
+   * A unit carried as an archive is compared by its contents, the way RomM
+   * hashes an archive — see `zipContentHash` — which a folder save cannot be:
+   * its archive is of the whole folder, and nothing about it is known until it
+   * is built.
+   */
+  private async sameAsRemote(asset: LocalAsset, hash: string | null): Promise<boolean> {
+    if (!hash) return false
+    if (asset.unit?.carriedAs === 'archive') {
+      const local = await membersContentHash(asset.unit.dir, asset.unit.members)
+      return local !== null && local === hash.toLowerCase()
+    }
+    return !asset.isDirectory && sameContent(asset.path, hash)
+  }
+
+  /**
    * A game's entries in a shared folder, as the one asset they travel as.
    *
    * Named after the ROM with the extension the server holds them under — a zip,
@@ -519,13 +537,13 @@ export class SaveSync {
     fromThisDevice: boolean | null
   ): Promise<SaveSyncState> {
     const state = syncStateOf(local?.mtimeMs ?? null, item.updated_at, fromThisDevice)
-    if (!local || local.isDirectory) return state
+    if (!local || (local.isDirectory && local.unit?.carriedAs !== 'archive')) return state
 
     const hash = contentHashOf(item)
     if (state === 'synced' && (hash === null || timesAgree(local.mtimeMs, item.updated_at))) {
       return state
     }
-    if (hash !== null && (await sameContent(local.path, hash))) return 'synced'
+    if (hash !== null && (await this.sameAsRemote(local, hash))) return 'synced'
 
     // Different bytes, so the inference does not hold. Asked again without it,
     // which leaves the clocks — and they say the copy on the server is the
@@ -1491,14 +1509,16 @@ export class SaveSync {
        * about a file that was never in question and the next launch settles it
        * without reading anything off the disk.
        */
-      if (match && !match.isDirectory && (await sameContent(match.path, contentHashOf(item)))) {
+      if (match && (await this.sameAsRemote(match, contentHashOf(item)))) {
         log.debug('saves', `the ${kind} here is already the copy on the server`, {
           romId: target.rom.id,
           id: item.id,
           fileName: item.file_name,
           path: match.path
         })
-        await stampMtime(match.path, remoteTime)
+        // A unit's members are what carries its date, not the path it is
+        // listed under. The same stamp an upload leaves, for the same reason.
+        await this.stampUploaded(match, remoteTime)
         continue
       }
 
@@ -1668,11 +1688,19 @@ export class SaveSync {
     try {
       await download(archive)
       if (contentHash) {
-        await verify(
-          archive,
-          { algorithm: 'md5', expected: contentHash },
-          { kind: 'save', fileName: `${unit.key}.zip` }
-        )
+        // RomM hashes an archive by its contents rather than its bytes — see
+        // `zipContentHash` — and the bytes are asked too, for a server that
+        // recorded them instead.
+        const expected = contentHash.toLowerCase()
+        const arrived = await zipContentHash(archive).catch(() => null)
+        if (arrived !== expected && (await hashOf(archive, 'md5')) !== expected) {
+          log.error('saves', 'the archive that arrived is not the one RomM recorded', undefined, {
+            key: unit.key,
+            expected,
+            arrived
+          })
+          throw new Error(t('error.saveEndedEarly', { name: unit.key }))
+        }
       } else if (expectedBytes > 0 && (await sizeOf(archive, false)) !== expectedBytes) {
         throw new Error(t('error.saveEndedEarly', { name: unit.key }))
       }

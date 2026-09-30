@@ -32,7 +32,7 @@ import type { RommRom, RommSave } from '@shared/types'
 import type { RommClient } from './romm/index.ts'
 import { SaveSync, type SaveTarget } from './saves.ts'
 import { Store } from './store.ts'
-import { zipDirectory, zipRoots } from './zip.ts'
+import { zipContentHash, zipDirectory, zipRoots } from './zip.ts'
 
 /**
  * Save sync through RetroDECK's shared cards, end to end against a fake RomM.
@@ -224,6 +224,14 @@ async function rootsOf(bytes: Buffer): Promise<string[]> {
 
 const OLD = new Date('2026-08-01T00:00:00Z')
 
+/** What RomM records as `content_hash` for these files, zipped. */
+async function rommHashOf(tree: FixtureTree): Promise<string> {
+  const root = scratch()
+  plant(join(root, 'files'), tree)
+  await zipDirectory(join(root, 'files'), join(root, 'up.zip'))
+  return zipContentHash(join(root, 'up.zip'))
+}
+
 /** Date every file under `root` well before any server copy. */
 function age(root: string): void {
   for (const entry of readdirSync(root, { withFileTypes: true, recursive: true })) {
@@ -322,6 +330,41 @@ describe('PCSX2 folder card', () => {
 
     assert.deepEqual([result.saves, result.failed], [0, 1])
     assert.deepEqual(hashes(card), before)
+  })
+
+  test('a copy RomM hashed by its contents is checked against them before anything moves', async () => {
+    const good = ps2({
+      saves: [remoteSave({ content_hash: await rommHashOf(PS2_REMOTE) })],
+      remote: PS2_REMOTE
+    })
+    assert.deepEqual(
+      [(await good.sync.pullNow(good.target)).saves, (await good.sync.pullNow(good.target)).failed],
+      [1, 0]
+    )
+
+    const bad = ps2({ saves: [remoteSave({ content_hash: 'f'.repeat(32) })], remote: PS2_REMOTE })
+    const before = hashes(bad.card)
+    assert.equal((await bad.sync.pullNow(bad.target)).failed, 1)
+    assert.deepEqual(hashes(bad.card), before)
+  })
+
+  test('the same save here is recognised by its contents, whatever the clocks say', async () => {
+    // RomM's copy is the card's own two folders, as another device uploaded
+    // them: newer by the clock, the same by the hash.
+    const own = Object.fromEntries(
+      Object.entries(PS2_CARD).filter(([path]) =>
+        PS2_OWNED.some((member) => path.startsWith(`${member}/`))
+      )
+    )
+    const { sync, target, backups } = ps2({
+      saves: [remoteSave({ content_hash: await rommHashOf(own) })],
+      remote: own
+    })
+
+    assert.equal((await sync.pullNow(target)).saves, 0)
+    assert.equal(existsSync(backups), false)
+    const [row] = await sync.listAssets(42, target)
+    assert.equal(row.sync, 'synced')
   })
 
   test('the Saves tab lists the unit as one row, sized by its members, in the card', async () => {
