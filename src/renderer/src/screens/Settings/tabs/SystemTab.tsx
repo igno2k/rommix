@@ -3,6 +3,7 @@ import type { DiagnosticsReport, RootLocation } from '@shared/types'
 import { FocusButton, Spinner, TextField } from '../../../components'
 import { useGamepadName } from '../../../input/focus'
 import { useApp, useI18n } from '../../../state'
+import { SaveSetupPanel } from '../SaveSetupPanel'
 import { UpdatePanel } from '../UpdatePanel'
 
 /**
@@ -186,6 +187,10 @@ export function SystemTab({
               {rechecking ? t('action.checking') : t('system.rerunCheck')}
             </FocusButton>
           </div>
+
+          {diagnostics.saveSetup ? (
+            <SaveSetupPanel report={diagnostics.saveSetup} onFixed={onRecheck} />
+          ) : null}
         </>
       )}
     </>

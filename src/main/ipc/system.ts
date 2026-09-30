@@ -5,6 +5,7 @@ import type {
   DriveSpace,
   PowerAction,
   RootLocation,
+  SaveSetupReport,
   Settings
 } from '@shared/types'
 import type { RomMixApp } from '../app.ts'
@@ -183,6 +184,17 @@ export function registerSystemIpc(rommix: RomMixApp, handle: Handle): void {
       notes
     })
 
+    // Checked here as well as at start-up, and written down again: the
+    // pre-flight check is when somebody is looking, and a setting changed since
+    // start-up is what they are looking for. A failure costs this section of the
+    // report, never the rest of it.
+    const saveSetup = await rommix.saveSetup.check().catch((cause: unknown) => {
+      log.error('savesetup', 'could not check the save-relevant emulator settings', cause)
+      return null
+    })
+    const drifted = saveSetup?.items.filter((item) => item.status !== 'ok').length ?? 0
+    if (drifted > 0) notes.push(t('diagnostics.saveSetupOff', { count: drifted }))
+
     return {
       flatpakAvailable: hasFlatpak,
       flathubConfigured: hasFlathub,
@@ -190,8 +202,19 @@ export function registerSystemIpc(rommix: RomMixApp, handle: Handle): void {
       romsWritable,
       drives: await drivesOf(await romFolders()),
       logPath: log.path(),
-      notes
+      notes,
+      saveSetup
     }
+  })
+
+  /**
+   * Set one save-relevant emulator setting, which the renderer calls only after
+   * the person confirmed it. Checked against the rules rather than trusted: this
+   * crosses the bridge, and the answer is a write into another program's files.
+   */
+  handle('system:fixSaveSetup', async (id: string): Promise<SaveSetupReport> => {
+    if (typeof id !== 'string' || id === '') throw new Error(t('diagnostics.saveSetupNotFixable'))
+    return rommix.saveSetup.fix(id)
   })
 
   /** Where RomMix keeps its own files, and where it would by default. */

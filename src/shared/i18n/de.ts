@@ -1012,6 +1012,34 @@ export const de: Catalog = {
   'system.checkedReady': 'Geprüft — alles sieht spielbereit aus',
   'system.checkedProblems_one': 'Geprüft — {count} Sache zu erledigen',
   'system.checkedProblems_other': 'Geprüft — {count} Sachen zu erledigen',
+  'system.saveSetup': 'Speicher-Einrichtung',
+  'system.saveSetupExplainer':
+    'Die Emulator-Einstellungen, die bestimmen, wo der Spielstand jedes Spiels geschrieben wird. RomMix ändert eine nur, wenn du es bestätigst, und legt vorher eine Kopie der Datei an.',
+  'system.saveSetupAllOk':
+    'Alle Einstellungen, von denen die Spielstand-Synchronisierung abhängt, stimmen.',
+  'system.saveSetupSetting': '{key} in {file}: {found}, erwartet {wanted}',
+  'system.saveSetupUnset': 'nicht gesetzt',
+  'system.saveSetupMissing':
+    '{file} gibt es noch nicht. Starte den Emulator einmal und prüfe dann erneut.',
+  'system.saveSetupUnreadable': '{file} konnte nicht gelesen werden.',
+  'system.saveSetupFix': 'Beheben',
+  'system.saveSetupConfirmTitle': 'Diese Emulator-Einstellung ändern?',
+  'system.saveSetupConfirmBody':
+    'RomMix setzt {key} in {file} auf {wanted} und legt vorher eine Kopie der Datei im eigenen Ordner an. Schließe zuerst RetroDECK.',
+  'system.saveSetupConfirm': 'Ändern',
+  'system.saveSetupFixed': 'Einstellung geändert',
+  'diagnostics.saveSetupOff_one':
+    '{count} Emulator-Einstellung, von der die Spielstand-Synchronisierung abhängt, stimmt nicht. Siehe Speicher-Einrichtung unten.',
+  'diagnostics.saveSetupOff_other':
+    '{count} Emulator-Einstellungen, von denen die Spielstand-Synchronisierung abhängt, stimmen nicht. Siehe Speicher-Einrichtung unten.',
+  'diagnostics.saveSetupBusy':
+    'Schließe zuerst RetroDECK und jedes Spiel: Ein laufender Emulator schreibt seine Einstellungen beim Beenden zurück.',
+  'diagnostics.saveSetupNotFixable': 'Diese Einstellung kann RomMix nicht ändern.',
+  'diagnostics.saveSetupLink': '{file} ist ein Link, deshalb hat RomMix die Datei nicht angefasst.',
+  'diagnostics.saveSetupNoFile':
+    '{file} gibt es noch nicht. Starte den Emulator einmal, damit er die Datei schreibt.',
+  'diagnostics.saveSetupNoBackup':
+    'RomMix konnte keine Kopie von {file} anlegen und hat die Datei daher nicht geändert.',
 
   'change.title': 'Den Emulator wechseln, der das ausführt?',
   'change.body':

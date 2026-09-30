@@ -1,4 +1,4 @@
-import { BrowserWindow, protocol, screen, shell } from 'electron'
+import { app, BrowserWindow, protocol, screen, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { resolveEmulator } from '@config/emulators'
@@ -14,6 +14,8 @@ import { contentTypeOf, OfflineCache, rememberInstalledGames } from './offline.t
 import { runMigrations } from './migrations.ts'
 import { RommClient } from './romm/index.ts'
 import { SaveSync } from './saves.ts'
+import { SaveSetup } from './savesetup.ts'
+import { processesCarrying } from './host.ts'
 import { rootPaths } from './root.ts'
 import { Store } from './store.ts'
 import { Updater } from './update.ts'
@@ -93,6 +95,18 @@ export class RomMixApp {
    * rather than something only Settings knows about.
    */
   readonly updates = new Updater(this.store, (status) => this.send('update:status', status))
+  /**
+   * The emulator settings save sync depends on, checked at start-up and by the
+   * pre-flight check, and changed only through a confirmed fix. See
+   * `SaveSetup`.
+   */
+  readonly saveSetup = new SaveSetup({
+    emulators: () => this.ensureEmulators(),
+    playing: () => this.launcher.playing !== null,
+    running: processesCarrying,
+    configDir: rootPaths().config,
+    version: () => app.getVersion()
+  })
 
   /** Cached emulator probe; refreshed on demand rather than on every call. */
   private emulatorCache: EmulatorState[] | null = null

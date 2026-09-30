@@ -87,6 +87,13 @@ if (!app.requestSingleInstanceLock()) {
     // measure a folder that is still being filled. See `OfflineCache.sweep`.
     await rommix.offline.sweep(rommix.store.installed)
     await rommix.refreshEmulators()
+    // Rewritten at every start, from the probe that just ran, so bazzite-maint
+    // reads a report as old as this session at most. Not waited on.
+    void rommix.saveSetup
+      .check()
+      .catch((cause: unknown) =>
+        log.error('savesetup', 'could not check the save-relevant emulator settings', cause)
+      )
     registerIpc(rommix)
     rommix.createWindow()
     // After the window, which is what the first result is announced to. The

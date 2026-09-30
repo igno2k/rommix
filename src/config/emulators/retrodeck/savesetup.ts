@@ -2,7 +2,9 @@ import type { Text } from '@shared/i18n'
 import { iniValue } from '../ini.ts'
 import { joinPath } from '../savepaths.ts'
 import type { SaveEnvironment } from '../savepaths.ts'
+import type { EmulatorState } from '../types.ts'
 import { PS2_SUPERBLOCK } from '../units/ps2.ts'
+import { RETRODECK_APP_ID } from './index.ts'
 import { retroDeckSystemLabel } from './saves.ts'
 
 /**
@@ -526,4 +528,45 @@ export function applySaveSetupRule(rule: SaveSetupRule, text: string | null): st
   if (rule.format === 'ini')
     return setIniValue(text ?? '', rule.section ?? '', rule.key, rule.wanted)
   return setCfgValue(text ?? '', rule.key, rule.wanted)
+}
+
+// ---------------------------------------------------------------------------
+// Which install the rules are about
+// ---------------------------------------------------------------------------
+
+/** The install a save-setup check reads, and how to tell it is running. */
+export interface SaveSetupTarget {
+  /** The emulator id, as the report names it. */
+  emulator: string
+  /**
+   * A string on the command line of every process of this install — its
+   * flatpak's id, which the sandbox of each of its emulators carries. A fix is
+   * refused while one is running: an emulator writes its config back on exit
+   * and would undo the edit, which is also why bazzite-maint refuses the same.
+   */
+  busyMarker: string
+  ctx: SaveSetupContext
+}
+
+/**
+ * RetroDECK, where it is installed, with the roots its rules are under — or
+ * null where it is not, and there is nothing to check.
+ */
+export function saveSetupTarget(
+  states: readonly EmulatorState[],
+  env: SaveEnvironment
+): SaveSetupTarget | null {
+  const state = states.find((one) => one.id === 'retrodeck' && one.available)
+  if (!state) return null
+  return {
+    emulator: state.id,
+    busyMarker: RETRODECK_APP_ID,
+    ctx: {
+      configDir: state.configDir,
+      home: state.paths.home,
+      saves: state.paths.saves,
+      installDir: state.install?.location ?? null,
+      env
+    }
+  }
 }

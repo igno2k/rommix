@@ -186,6 +186,14 @@ export { switchTitleId, switchProfileDir } from './switch-saves.ts'
 export { coreLibraryName, readLibretroConfig } from './libretro.ts'
 export { baseName, dirName, joinPath } from './savepaths.ts'
 export { SAVE_CONVENTIONS } from './saves.ts'
+export { applySaveSetupRule, evaluateSaveSetup, saveSetupTarget } from './retrodeck/savesetup.ts'
+export type {
+  SaveSetupFinding,
+  SaveSetupFormat,
+  SaveSetupRule,
+  SaveSetupStatus,
+  SaveSetupTarget
+} from './retrodeck/savesetup.ts'
 
 export type {
   CoreContext,

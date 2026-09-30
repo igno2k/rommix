@@ -1001,6 +1001,34 @@ export const fr: Catalog = {
   'system.checkedReady': 'Vérifié — tout a l’air prêt pour jouer',
   'system.checkedProblems_one': 'Vérifié — {count} point à régler',
   'system.checkedProblems_other': 'Vérifié — {count} points à régler',
+  'system.saveSetup': 'Réglages des sauvegardes',
+  'system.saveSetupExplainer':
+    "Les réglages d'émulateur qui décident où la sauvegarde de chaque jeu est écrite. RomMix n'en change un que si vous le confirmez, après avoir gardé une copie du fichier.",
+  'system.saveSetupAllOk':
+    'Tous les réglages dont dépend la synchronisation des sauvegardes sont corrects.',
+  'system.saveSetupSetting': '{key} dans {file} : {found}, attendu {wanted}',
+  'system.saveSetupUnset': 'non défini',
+  'system.saveSetupMissing':
+    "{file} n'existe pas encore. Lancez l'émulateur une fois, puis vérifiez à nouveau.",
+  'system.saveSetupUnreadable': "{file} n'a pas pu être lu.",
+  'system.saveSetupFix': 'Corriger',
+  'system.saveSetupConfirmTitle': "Modifier ce réglage d'émulateur ?",
+  'system.saveSetupConfirmBody':
+    "RomMix va régler {key} sur {wanted} dans {file}, après avoir gardé une copie du fichier dans son propre dossier. Fermez d'abord RetroDECK.",
+  'system.saveSetupConfirm': 'Modifier',
+  'system.saveSetupFixed': 'Réglage modifié',
+  'diagnostics.saveSetupOff_one':
+    "{count} réglage d'émulateur dont dépend la synchronisation des sauvegardes n'est pas bon. Voir Réglages des sauvegardes ci-dessous.",
+  'diagnostics.saveSetupOff_other':
+    "{count} réglages d'émulateur dont dépend la synchronisation des sauvegardes ne sont pas bons. Voir Réglages des sauvegardes ci-dessous.",
+  'diagnostics.saveSetupBusy':
+    "Fermez d'abord RetroDECK et tout jeu : un émulateur en cours réécrit ses réglages en quittant.",
+  'diagnostics.saveSetupNotFixable': "Ce n'est pas un réglage que RomMix peut modifier.",
+  'diagnostics.saveSetupLink': "{file} est un lien, RomMix n'y a pas touché.",
+  'diagnostics.saveSetupNoFile':
+    "{file} n'existe pas encore. Lancez l'émulateur une fois pour qu'il l'écrive.",
+  'diagnostics.saveSetupNoBackup':
+    "RomMix n'a pas pu garder une copie de {file}, il ne l'a donc pas modifié.",
 
   'change.title': 'Changer l’émulateur qui fait tourner cela ?',
   'change.body':

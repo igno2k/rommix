@@ -991,6 +991,33 @@ export const es: Catalog = {
   'system.checkedReady': 'Comprobado — todo parece listo para jugar',
   'system.checkedProblems_one': 'Comprobado — {count} cosa por resolver',
   'system.checkedProblems_other': 'Comprobado — {count} cosas por resolver',
+  'system.saveSetup': 'Ajustes de guardado',
+  'system.saveSetupExplainer':
+    'Los ajustes de emulador que deciden dónde se escribe la partida de cada juego. RomMix solo cambia uno si lo confirmas, después de guardar una copia del archivo.',
+  'system.saveSetupAllOk':
+    'Todos los ajustes de los que depende la sincronización de partidas están bien.',
+  'system.saveSetupSetting': '{key} en {file}: {found}, se espera {wanted}',
+  'system.saveSetupUnset': 'sin definir',
+  'system.saveSetupMissing': '{file} aún no existe. Abre el emulador una vez y vuelve a comprobar.',
+  'system.saveSetupUnreadable': 'No se pudo leer {file}.',
+  'system.saveSetupFix': 'Corregir',
+  'system.saveSetupConfirmTitle': '¿Cambiar este ajuste del emulador?',
+  'system.saveSetupConfirmBody':
+    'RomMix pondrá {key} a {wanted} en {file}, después de guardar una copia del archivo en su propia carpeta. Cierra antes RetroDECK.',
+  'system.saveSetupConfirm': 'Cambiarlo',
+  'system.saveSetupFixed': 'Ajuste cambiado',
+  'diagnostics.saveSetupOff_one':
+    '{count} ajuste de emulador del que depende la sincronización de partidas no está bien. Mira Ajustes de guardado más abajo.',
+  'diagnostics.saveSetupOff_other':
+    '{count} ajustes de emulador de los que depende la sincronización de partidas no están bien. Mira Ajustes de guardado más abajo.',
+  'diagnostics.saveSetupBusy':
+    'Cierra antes RetroDECK y cualquier juego: un emulador en marcha vuelve a escribir sus ajustes al salir.',
+  'diagnostics.saveSetupNotFixable': 'Ese no es un ajuste que RomMix pueda cambiar.',
+  'diagnostics.saveSetupLink': '{file} es un enlace, así que RomMix no lo tocó.',
+  'diagnostics.saveSetupNoFile':
+    '{file} aún no existe. Abre el emulador una vez para que lo escriba.',
+  'diagnostics.saveSetupNoBackup':
+    'RomMix no pudo guardar una copia de {file}, así que no lo cambió.',
 
   'change.title': '¿Cambiar el emulador que ejecuta esto?',
   'change.body': 'Cada emulador guarda sus propios archivos, y al cambiar no se mueve ninguno:',

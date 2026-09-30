@@ -71,4 +71,46 @@ export interface DiagnosticsReport {
   /** The log file, so a bug report can name the file rather than hunt for it. */
   logPath: string
   notes: string[]
+  /**
+   * The emulator settings per-game save sync depends on, or null where no
+   * emulator RomMix checks them for is installed. See `SaveSetupReport`.
+   */
+  saveSetup: SaveSetupReport | null
+}
+
+/**
+ * One emulator setting that decides where, or in what shape, a save is
+ * written — as it stands on this machine.
+ *
+ * Also what `save-setup.json` holds, which bazzite-maint reads: it re-reads
+ * `file` itself and compares `key` against `wanted`, so drift after RomMix last
+ * looked is still caught. Field names are part of that contract.
+ */
+export interface SaveSetupItem {
+  id: string
+  /** Absolute path of the file the setting is in. */
+  file: string
+  format: 'ini' | 'cfg' | 'esde-gamelist'
+  /** The INI section, where the format has sections. */
+  section: string | null
+  key: string
+  wanted: string
+  /** The value there now, or null where the key or the file is absent. */
+  found: string | null
+  status: 'ok' | 'drift' | 'missing-file' | 'report-only' | 'unreadable'
+  /** Whether RomMix can set it (`edit`), or only say so. */
+  fix: 'edit' | 'report-only'
+  /** Why it matters, in the language RomMix is set to. */
+  reason: string
+}
+
+/** Every save-relevant setting of one emulator install, and when it was read. */
+export interface SaveSetupReport {
+  /** The version of this shape, raised when a reader would misread the next. */
+  schema: 1
+  /** The RomMix version that wrote it. */
+  rommix: string
+  checkedAt: string
+  emulator: string
+  items: SaveSetupItem[]
 }

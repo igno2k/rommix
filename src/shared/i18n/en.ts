@@ -989,6 +989,31 @@ export const en = {
   'system.checkedReady': 'Checked — everything looks ready to play',
   'system.checkedProblems_one': 'Checked — {count} thing to sort out',
   'system.checkedProblems_other': 'Checked — {count} things to sort out',
+  'system.saveSetup': 'Save setup',
+  'system.saveSetupExplainer':
+    "The emulator settings that decide where each game's save is written. RomMix changes one only when you confirm it, after keeping a copy of the file.",
+  'system.saveSetupAllOk': 'Every setting save sync depends on is as it should be.',
+  'system.saveSetupSetting': '{key} in {file}: {found}, wanted {wanted}',
+  'system.saveSetupUnset': 'not set',
+  'system.saveSetupMissing': '{file} is not there yet. Run the emulator once, then check again.',
+  'system.saveSetupUnreadable': '{file} could not be read.',
+  'system.saveSetupFix': 'Fix',
+  'system.saveSetupConfirmTitle': 'Change this emulator setting?',
+  'system.saveSetupConfirmBody':
+    'RomMix will set {key} to {wanted} in {file}, after keeping a copy of the file in its own folder. Close RetroDECK first.',
+  'system.saveSetupConfirm': 'Change it',
+  'system.saveSetupFixed': 'Setting changed',
+  'diagnostics.saveSetupOff_one':
+    '{count} emulator setting that save sync depends on is off. See Save setup below.',
+  'diagnostics.saveSetupOff_other':
+    '{count} emulator settings that save sync depends on are off. See Save setup below.',
+  'diagnostics.saveSetupBusy':
+    'Close RetroDECK and any game first: an emulator that is running writes its settings back when it exits.',
+  'diagnostics.saveSetupNotFixable': 'That is not a setting RomMix can change.',
+  'diagnostics.saveSetupLink': '{file} is a link, so RomMix left it alone.',
+  'diagnostics.saveSetupNoFile': '{file} is not there yet. Run the emulator once so it writes it.',
+  'diagnostics.saveSetupNoBackup':
+    'RomMix could not keep a copy of {file}, so it did not change it.',
 
   'change.title': 'Change which emulator runs this?',
   'change.body': 'Each emulator keeps its own files, and nothing moves across when you change one:',

@@ -100,6 +100,35 @@ export async function processTreeOf(roots: readonly number[]): Promise<number[]>
   return [...descendantsOf(ps ?? '', roots), ...roots]
 }
 
+/**
+ * The processes whose command line carries `marker`, as `pid command` lines —
+ * how "is this emulator's install running" is asked where the install is a
+ * flatpak, whose id is on the command line of every sandbox it starts.
+ *
+ * `ps` rather than `pgrep` for the same reason `processTreeOf` uses it, and
+ * the answer leaves out this process and the `ps` itself.
+ */
+export async function processesCarrying(marker: string): Promise<string[]> {
+  const ps = await run(['ps', '-eo', 'pid=,args='])
+  return carrying(ps ?? '', marker, process.pid)
+}
+
+/** The lines of a `pid args` listing that carry `marker`, other than `self`. */
+export function carrying(psOutput: string, marker: string, self: number): string[] {
+  return psOutput
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => {
+      const [pid, command] = [Number(line.split(/\s+/)[0]), line.replace(/^\d+\s+/, '')]
+      return (
+        Number.isInteger(pid) &&
+        pid !== self &&
+        command.includes(marker) &&
+        !/^(ps|pgrep)\b/.test(command)
+      )
+    })
+}
+
 /** Every process descended from `roots`, from one snapshot of the process table. */
 export function descendantsOf(psOutput: string, roots: readonly number[]): number[] {
   const children = new Map<number, number[]>()
