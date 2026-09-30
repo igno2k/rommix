@@ -4,6 +4,14 @@ Newest first. `npm run release` adds the entry for a version, falling back to th
 commit subjects and ids since the previous tag — so write the section by hand
 before releasing if you want prose instead. See [Releasing](README.md#releasing).
 
+## 0.20.3 (igno2k/rommix fork) — 2026-09-30
+
+- feat: a PS2 game's unit is the folders PCSX2 shows it: its serial folders plus those its `memcardFilters` in PCSX2's GameDB name (read from the `GameIndex.yaml` in RetroDECK's PCSX2 component; the serial alone, with a warning in the log, where it cannot be read) (igno2k/claude#288)
+- feat: a folder another game owns too goes up with the unit but is that game's to keep: a pull writes it only where it is missing, never replaces, re-dates or removes it, and it does not count towards the unit's age
+- feat: where RomM files more than one ROM of a platform under one serial (Half-Life and Half-Life: Blue Shift, `BASLUS-20066`), the one whose name is the GameDB's name for the serial owns its folders; any other, and every ROM of a serial the GameDB cannot name, holds them as shared, logged as a warning. The only ROM under its serial owns it whatever it is called. The count is read from RomM's listing only for a ROM the GameDB does not name, once per session, with the region prefix ignored; a failed listing is not retried at once
+- feat: a PS2 unit leaves PCSX2's `_pcsx2_index` out of the archive and the content hash, so the same save hashes alike across clients and card types; a pull writes the index an archive carries, and otherwise keeps this device's. `_pcsx2_meta_directory` and `_pcsx2_meta/` are part of the save and travel with it
+- feat: the console's system and network folders (`*DATA-SYSTEM`, `*WNETCNF`) are never part of a PS2 unit; an archive carrying one is refused
+
 ## 0.20.2 (igno2k/rommix fork) — 2026-09-30
 
 - feat: before a Dreamcast game's first launch with per-game VMUs, copy the shared VMU to the name Flycast takes over from, so the game sees the saves made on it; only after a pull that finished, never over an existing VMU, not for arcade files; the options file checked follows `global_core_options` (igno2k/claude#284)
