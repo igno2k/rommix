@@ -351,9 +351,33 @@ export interface RommRom {
    */
   sibling_roms: RommSiblingRom[]
 
+  /**
+   * What names this game's saves inside a folder other games write to as well —
+   * a PS2 serial, a PSP disc id, a Dreamcast product number — as RomM's scan
+   * read it out of the game itself.
+   *
+   * Optional because a server older than the one that learned to read these
+   * sends neither field, and null where the scan found nothing to read. See
+   * `SaveContext.saveTarget`, which is where it is carried to the descriptors.
+   */
+  save_target?: string | null
+  save_target_layout?: RommSaveTargetLayout | null
+
   created_at: string
   updated_at: string
 }
+
+/**
+ * RomM's SaveTargetLayout enum — how the entries `save_target` names sit in the
+ * shared folder: one folder or file of exactly that name, several starting with
+ * it, or one split across folders.
+ *
+ * Not in backticks on purpose: the sweep in `romm.test.ts` binds a doc comment
+ * that cites a schema to the next interface, and a string enum has no fields
+ * to check.
+ */
+export type RommSaveTargetLayout =
+  'folder-exact' | 'folder-prefix' | 'file-exact' | 'file-prefix' | 'folder-split'
 
 /** GET /api/roms envelope (`CustomLimitOffsetPage_SimpleRomSchema_`). */
 export interface RommRomPage {
