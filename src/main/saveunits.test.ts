@@ -10,6 +10,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync
 } from 'node:fs'
 import { rename } from 'node:fs/promises'
@@ -39,7 +40,7 @@ import {
 } from '@config/emulators/units/fixtures.ts'
 import { fileSystemEnvironment } from './saveenv.ts'
 import { backupPath } from './savefiles.ts'
-import { findUnit, removeUnit, restoreUnit } from './saveunits.ts'
+import { findUnit, plantSeed, removeUnit, restoreUnit } from './saveunits.ts'
 import { zipDirectory, zipMembers } from './zip.ts'
 
 /**
@@ -588,5 +589,51 @@ describe('deleting a game’s entries here', () => {
     ])
     assert.deepEqual(hashes(dir), others)
     for (const member of PS2_OWNED) assert.ok(existsSync(backupPath(backups, join(dir, member), 1)))
+  })
+})
+
+describe('plantSeed', () => {
+  function seedRig(): { from: string; dir: string; to: string; own: string } {
+    const root = scratch()
+    const from = join(root, 'bios', 'vmu_save_A1.bin')
+    mkdirSync(join(root, 'bios'))
+    writeFileSync(from, 'shared')
+    const dir = join(root, 'saves', 'dreamcast')
+    return { from, dir, to: join(dir, 'Game.A1.bin'), own: join(dir, 'MK-51035.A1.bin') }
+  }
+
+  test('copies into a folder that is not there yet, and leaves nothing beside it', async () => {
+    const rig = seedRig()
+    assert.equal(await plantSeed({ from: rig.from, to: rig.to, unless: [rig.own] }), 'planted')
+    assert.equal(readFileSync(rig.to, 'utf8'), 'shared')
+    assert.deepEqual(readdirSync(rig.dir), ['Game.A1.bin'])
+  })
+
+  test('never over anything, a link to nowhere included', async () => {
+    const rig = seedRig()
+    mkdirSync(rig.dir, { recursive: true })
+    symlinkSync(join(rig.dir, 'gone'), rig.to)
+    assert.equal(await plantSeed({ from: rig.from, to: rig.to, unless: [] }), 'present')
+    assert.deepEqual(readdirSync(rig.dir), ['Game.A1.bin'])
+
+    const other = seedRig()
+    mkdirSync(other.dir, { recursive: true })
+    writeFileSync(other.own, 'its own')
+    assert.equal(
+      await plantSeed({ from: other.from, to: other.to, unless: [other.own] }),
+      'present'
+    )
+    assert.deepEqual(readdirSync(other.dir), ['MK-51035.A1.bin'])
+  })
+
+  test('a source that is missing or not a file is nothing to copy', async () => {
+    const rig = seedRig()
+    const missing = join(rig.dir, '..', 'none.bin')
+    assert.equal(await plantSeed({ from: missing, to: rig.to, unless: [] }), 'no-source')
+    assert.equal(
+      await plantSeed({ from: join(rig.from, '..'), to: rig.to, unless: [] }),
+      'no-source'
+    )
+    assert.equal(existsSync(rig.dir), false)
   })
 })

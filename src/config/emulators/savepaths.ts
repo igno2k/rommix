@@ -176,7 +176,28 @@ export interface SavePaths {
    * the language is decided. `SaveSync` resolves it on the way out.
    */
   unsyncableReason?: Text
+  /**
+   * A file to put in place just before the emulator starts, where the game has
+   * nothing of its own yet — or why none is put there. Absent where the
+   * emulator has no such thing.
+   *
+   * Asked for after the pull, so a copy the pull brought down counts as the
+   * game's own.
+   */
+  seed?: SaveSeed
 }
+
+/**
+ * A copy of one file made before a launch, and never over anything.
+ *
+ * `to` is written only where neither it nor any path in `unless` exists, and
+ * only where `from` is a file. The descriptor names the paths; checking them
+ * and writing the copy is the main process's.
+ */
+export type SaveSeed =
+  | { from: string; to: string; unless: readonly string[] }
+  /** Why nothing is copied, for the log. */
+  | { skipped: string }
 
 /**
  * A read-only view of the machine, handed to a descriptor.

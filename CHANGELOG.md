@@ -4,6 +4,10 @@ Newest first. `npm run release` adds the entry for a version, falling back to th
 commit subjects and ids since the previous tag — so write the section by hand
 before releasing if you want prose instead. See [Releasing](README.md#releasing).
 
+## Unreleased
+
+- feat: before a Dreamcast game's first launch with per-game VMUs, copy the shared VMU to the name Flycast takes over from, so the game sees the saves made on it; never over an existing VMU, skipped for archives (igno2k/claude#284)
+
 ## 0.20.1 (igno2k/rommix fork) — 2026-09-30
 
 Fork of leclercb/rommix 0.20.0 (igno2k/claude#284). Updates come from igno2k/rommix.

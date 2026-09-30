@@ -108,6 +108,52 @@ PSP (`SaveUnit.alsoAccepts`).
 Deleting a unit "on this device" removes the game's members, each copied aside
 first, and nothing else, under the same running-emulator guard.
 
+## The first Dreamcast launch
+
+With per-game VMUs on (`reicast_per_content_vmus` is `VMU A1` or `All VMUs`),
+Flycast opens `<product>.A1.bin` in the core's save folder. Where that is
+missing it loads a file named after the content, writes the product-named file
+from it and deletes the old one (`getVmuPath` in `oslib.cpp`, `maple_devs.cpp`).
+A game with neither starts on an empty VMU, and its saves on the shared
+`<system dir>/dc/vmu_save_A1.bin` are out of its sight.
+
+So after the pull before a launch, RomMix copies the shared VMU to
+`<save folder>/<content name>.A1.bin` when neither that file nor
+`<product>.A1.bin` exists. Flycast then takes it over through its own path.
+It does so only where automatic pulls are on, and only after a pull that
+listed the server and brought down everything it meant to. A pull that threw,
+or lost a copy on the way, may have left the game's own VMU on the server,
+and a seed in its place would be what the next push sends over it.
+
+A seeded VMU is a copy of the whole shared card, every game's saves on it
+included. Once Flycast has taken it over it is this game's unit: it goes to
+RomM under this game with the other games' saves still on it, and from then
+on it and the shared card change apart.
+
+- The rule is `dreamcastSeed` (`units/dc.ts`), with Flycast's content name
+  (`flycastContentName`: the file name cut to Flycast's buffer, minus its last
+  extension). RetroDECK's wiring (`flycastSeed` in `retrodeck/saves.ts`)
+  supplies the option, the save folder the layout above resolves
+  (`savefile_directory/<ROM folder>` with sorting by content), and the system
+  folder (`system_directory`, or the ROM's folder where it is empty).
+- The option comes from the first options file RetroArch would read
+  (`flycastOptionFiles` in `retrodeck/flycast.ts`): the game's own `.opt`, the
+  folder's, then with `global_core_options` off `Flycast.opt` (or the global
+  file where it is not there yet), and with it on the global
+  `retroarch-core-options.cfg` alone. The save-setup rule
+  `flycast.perContentVmuOverride` checks the same file: `Flycast.opt`, or the
+  global file with `global_core_options` on.
+- It reaches the main process as `SavePaths.seed`. `plantSeed`
+  (`src/main/saveunits.ts`) writes the copy beside the target and links it into
+  place, so nothing is ever overwritten. `SaveSync.seed` runs it with the
+  pull's result, and the launcher calls that after the pull; a failure is
+  logged and the game starts.
+- No copy is made, with the reason logged, for a file Flycast runs as a NAOMI
+  or Atomiswave board (`.lst`, `.bin`, `.dat`, `.zip`, `.7z`), for any system
+  but `dreamcast`, for a game RomM sent no `save_target` for, or for a name
+  Flycast cuts inside a character. None is made where the shared VMU is
+  missing. Only port A1 is seeded.
+
 ## Save setup
 
 RomMix is the single writer of the settings that decide where and in what
@@ -139,3 +185,6 @@ RetroDECK's default.
   (`saves/psp/PSP/SAVEDATA` under RetroDECK). The standalone's
   `saves/PSP/PPSSPP-SA` is taken from RetroDECK's `component_prepare.sh`.
 - The fork's release assets carry the GitHub `digest` the updater requires.
+- With `global_core_options` off and no `Flycast.opt` yet, RetroArch takes
+  Flycast's options from the global file. The RomM `save_target` of a
+  Dreamcast game is the product number Flycast reads.

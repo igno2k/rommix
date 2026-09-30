@@ -55,7 +55,7 @@ import {
   slotToSend
 } from './savepairing.ts'
 import { progressRun, type SaveRun } from './saveprogress.ts'
-import { findUnit, removeUnit, restoreUnit } from './saveunits.ts'
+import { findUnit, plantSeed, removeUnit, restoreUnit, type SeedOutcome } from './saveunits.ts'
 import {
   extractZip,
   membersContentHash,
@@ -155,7 +155,7 @@ export interface SaveTarget {
  * copy here is already the same file. A count of what was written is otherwise
  * a zero with three possible meanings and no way to tell which.
  */
-interface PullCount {
+export interface PullCount {
   written: number
   offered: number
   /**
@@ -639,6 +639,41 @@ export class SaveSync {
         offered: saves.offered + states.offered,
         failed: saves.failed + states.failed
       }
+    })
+  }
+
+  /**
+   * Put the file the descriptor asks for in place before the game starts —
+   * see `SavePaths.seed`.
+   *
+   * `pulled` is what the pull before it did, null where it threw. Only a pull
+   * that asked the server and lost nothing on the way lets a seed through: a
+   * pull that could not list, or dropped a copy, may have left the game's own
+   * save on the server, and a seed in its place is the copy the next push
+   * would send over it. A save the pull did bring down is the game's own and
+   * stops the seed by being there.
+   *
+   * Only where automatic pulls are on, too: with them off, something other
+   * than RomMix keeps the save folders — Syncthing, say — and a file RomMix
+   * put there would be a second writer's.
+   */
+  async seed(target: SaveTarget, pulled: PullCount | null): Promise<SeedOutcome | null> {
+    return this.oneAtATime(target.rom.id, async () => {
+      if (!this.store.settings.syncSavesDown) return null
+      const seed = this.locate(target).seed
+      if (!seed) return null
+      if ('skipped' in seed) {
+        log.info('saves', 'no first-launch seed', { romId: target.rom.id, reason: seed.skipped })
+        return null
+      }
+      if (pulled === null || pulled.failed > 0) {
+        log.warn('saves', 'no first-launch seed after a pull that did not finish', {
+          romId: target.rom.id,
+          failed: pulled?.failed ?? null
+        })
+        return null
+      }
+      return plantSeed(seed)
     })
   }
 

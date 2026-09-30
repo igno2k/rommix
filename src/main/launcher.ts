@@ -14,7 +14,7 @@ import {
 import { realHome } from './xdg.ts'
 import { log } from './log.ts'
 import type { RommClient } from './romm/index.ts'
-import type { SaveSync } from './saves.ts'
+import type { PullCount, SaveSync } from './saves.ts'
 import { SYNC_TOLERANCE_MS } from './savefiles.ts'
 import type { Store } from './store.ts'
 import { t } from './i18n.ts'
@@ -356,8 +356,10 @@ export class Launcher {
       // Pull remote saves before the emulator opens them. A failure here is
       // reported but does not block play — the local save is still valid.
       let pullError: string | null = null
+      /** What the pull did, or null where it threw — the seed below is judged by it. */
+      let pulled: PullCount | null = null
       try {
-        const pulled = await this.saveSync.pull(target)
+        pulled = await this.saveSync.pull(target)
         log.info('launch', 'saves pulled before start', { romId: rom.id, ...pulled })
       } catch (cause) {
         pullError = (cause as Error).message
@@ -367,6 +369,18 @@ export class Launcher {
       // Stopped while the saves were coming down: there is no process to
       // signal, so the request has to be honoured here instead.
       if (session.stopped) return failure(t('launch.stoppedBeforeStart'), command)
+
+      // After the pull, and only after one that finished: what it brought down
+      // is not seeded over, and a server it could not read is not seeded past.
+      // A seed that cannot be put in place leaves the game where it would have
+      // been without one, which is no reason to keep it from starting.
+      try {
+        await this.saveSync.seed(target, pulled)
+      } catch (cause) {
+        log.error('launch', 'could not seed a save before start, starting anyway', cause, {
+          romId: rom.id
+        })
+      }
 
       const startedAt = new Date()
       /**

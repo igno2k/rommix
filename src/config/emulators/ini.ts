@@ -5,7 +5,8 @@
  * headers and `Key = Value` lines — and a descriptor needs one or two values
  * out of a file of hundreds, so this is a lookup rather than a parser that
  * builds a model of the whole file. Section and key names compare without case,
- * as the emulators' own readers do.
+ * as the emulators' own readers do. RetroArch's `key = "value"` files are the
+ * same lookup without sections, and with names compared exactly.
  */
 
 /** The value of `key` under `[section]`, trimmed, or null where either is absent. */
@@ -26,6 +27,16 @@ export function iniValue(text: string | null, section: string, key: string): str
     const cut = line.indexOf('=')
     if (cut === -1) continue
     if (line.slice(0, cut).trim().toLowerCase() === wantedKey) return line.slice(cut + 1).trim()
+  }
+  return null
+}
+
+/** The value of a `key = "value"` line, as RetroArch writes its config. */
+export function cfgValue(text: string | null, key: string): string | null {
+  if (text === null) return null
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line)
+    if (match && match[1] === key) return match[2].replace(/^"(.*)"$/, '$1')
   }
   return null
 }

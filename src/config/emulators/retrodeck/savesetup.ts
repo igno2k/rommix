@@ -1,10 +1,12 @@
 import type { Text } from '@shared/i18n'
-import { iniValue } from '../ini.ts'
+import { cfgValue, iniValue } from '../ini.ts'
+import { readLibretroConfig } from '../libretro.ts'
 import { joinPath } from '../savepaths.ts'
 import type { SaveEnvironment } from '../savepaths.ts'
 import type { EmulatorState } from '../types.ts'
 import { PS2_SUPERBLOCK } from '../units/ps2.ts'
 import { RETRODECK_APP_ID } from './appid.ts'
+import { CORE_OPTIONS, FLYCAST_OVERRIDES, VMU_KEY } from './flycast.ts'
 import { retroDeckSystemLabel } from './saves.ts'
 
 /**
@@ -21,6 +23,8 @@ import { retroDeckSystemLabel } from './saves.ts'
  * functions of text — so the adapter in `src/main/savesetup.ts` is left with
  * the disk, the backups and the guards.
  */
+
+export { cfgValue }
 
 export type SaveSetupFormat = 'ini' | 'cfg' | 'esde-gamelist'
 
@@ -105,10 +109,6 @@ export const RETRODECK_SYSTEM_LABELS: Readonly<Record<string, string>> = {
 }
 
 const RETROARCH_CFG = 'retroarch/retroarch.cfg'
-const CORE_OPTIONS = 'retroarch/retroarch-core-options.cfg'
-/** Where RetroArch keeps Flycast's overrides: a folder named after the core. */
-const FLYCAST_OVERRIDES = 'retroarch/config/Flycast'
-const VMU_KEY = 'reicast_per_content_vmus'
 const VMU_WANTED = 'VMU A1'
 
 /** The rules that do not depend on what is on this machine. */
@@ -283,9 +283,42 @@ function perGameFlycastRules(ctx: SaveSetupContext): SaveSetupRule[] {
     }))
 }
 
+/**
+ * Is `global_core_options` on in RetroDECK's `retroarch.cfg`? RetroArch's own
+ * default is off.
+ */
+function globalCoreOptions(ctx: SaveSetupContext): boolean {
+  if (!ctx.configDir) return false
+  return readLibretroConfig(ctx.env, [joinPath(ctx.configDir, RETROARCH_CFG)], ctx.home ?? '')
+    .globalCoreOptions
+}
+
+/**
+ * The core-wide Flycast rule, aimed at the file RetroArch reads the core's
+ * options from after a game's and a folder's own.
+ *
+ * With `global_core_options` off that is `Flycast.opt`, or the global file
+ * where it is not there yet (which `flycast.perContentVmu` already checks, so
+ * its absence is fine). With it on, `Flycast.opt` is never read and the global
+ * file is the one that counts, so that is the one checked and fixed.
+ */
+function flycastCoreRule(rule: SaveSetupRule, ctx: SaveSetupContext): SaveSetupRule {
+  if (rule.id !== 'flycast.perContentVmuOverride' || !globalCoreOptions(ctx)) return rule
+  // Not an override any more, so it says what the global rule says.
+  return {
+    ...rule,
+    file: CORE_OPTIONS,
+    absentIsFine: false,
+    reason: 'saveSetup.flycastPerContentVmu'
+  }
+}
+
 /** Every rule, the per-game overrides found on this machine included. */
 export function saveSetupRules(ctx: SaveSetupContext): SaveSetupRule[] {
-  return [...SAVE_SETUP_RULES, ...perGameFlycastRules(ctx)]
+  return [
+    ...SAVE_SETUP_RULES.map((rule) => flycastCoreRule(rule, ctx)),
+    ...perGameFlycastRules(ctx)
+  ]
 }
 
 // ---------------------------------------------------------------------------
@@ -303,16 +336,6 @@ export function normalizeSetting(value: string | null): string | null {
   if (bare === '1' || bare === 'yes') return 'true'
   if (bare === '0' || bare === 'no') return 'false'
   return bare
-}
-
-/** The value of a `key = "value"` line, as RetroArch writes its config. */
-export function cfgValue(text: string | null, key: string): string | null {
-  if (text === null) return null
-  for (const line of text.split(/\r?\n/)) {
-    const match = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line)
-    if (match && match[1] === key) return match[2].replace(/^"(.*)"$/, '$1')
-  }
-  return null
 }
 
 /** The system-wide `<alternativeEmulator>` label of an ES-DE gamelist. */

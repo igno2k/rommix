@@ -221,5 +221,6 @@ export type {
   SaveLocation,
   SaveMatch,
   SavePaths,
+  SaveSeed,
   SaveUnit
 } from './savepaths.ts'

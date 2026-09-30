@@ -1658,3 +1658,157 @@ test('RetroDECK PPSSPP core: the memory stick inside the core\u2019s save folder
   assert.equal(paths.saves?.dir, `${RD}/saves/psp/PSP/SAVEDATA`)
   assert.equal(paths.emulator, 'ppsspp')
 })
+
+// ---------------------------------------------------------------------------
+// RetroDECK Flycast: the first-launch VMU
+// ---------------------------------------------------------------------------
+
+const CORE_OPTIONS_FILE = `${RD_CONFIG}/retroarch/retroarch-core-options.cfg`
+const FLYCAST_OPT = `${RD_CONFIG}/retroarch/config/Flycast`
+const WITH_SYSTEM_DIR = retroArchCfg({
+  savefile_directory: `${RD}/saves`,
+  sort_savefiles_by_content_enable: 'true',
+  system_directory: `${RD}/bios`
+})
+
+function flycastSeedFor(options: {
+  romPath?: string
+  saveTarget?: string | null
+  files?: Record<string, string>
+}): SavePaths['seed'] {
+  return retroDeckUnit({
+    romPath: options.romPath ?? `${RD}/roms/dreamcast/Crazy Taxi (USA).chd`,
+    system: 'dreamcast',
+    saveTarget: options.saveTarget === null ? undefined : (options.saveTarget ?? 'MK-51035'),
+    installDir: '/var/rd/install',
+    files: {
+      ...esSystems('dreamcast', 'Flycast', 'flycast'),
+      [`${RD_CONFIG}/retroarch/retroarch.cfg`]: WITH_SYSTEM_DIR,
+      ...options.files
+    }
+  }).seed
+}
+
+test('RetroDECK Flycast: with a per-game A1 the shared VMU is offered under the old name', () => {
+  const seed = flycastSeedFor({
+    files: { [CORE_OPTIONS_FILE]: 'reicast_per_content_vmus = "VMU A1"\n' }
+  })
+  assert.deepEqual(seed, {
+    from: `${RD}/bios/dc/vmu_save_A1.bin`,
+    to: `${RD}/saves/dreamcast/Crazy Taxi (USA).A1.bin`,
+    unless: [`${RD}/saves/dreamcast/MK-51035.A1.bin`]
+  })
+  // "All VMUs" makes A1 the game's own as well.
+  assert.ok(
+    flycastSeedFor({ files: { [CORE_OPTIONS_FILE]: 'reicast_per_content_vmus = "All VMUs"' } })
+  )
+})
+
+test('RetroDECK Flycast: no seed while A1 is still the shared VMU', () => {
+  assert.equal(flycastSeedFor({}), undefined)
+  for (const value of ['disabled', 'vmu a1', '']) {
+    const files = { [CORE_OPTIONS_FILE]: `reicast_per_content_vmus = "${value}"` }
+    assert.equal(flycastSeedFor({ files }), undefined, value)
+  }
+})
+
+test('RetroDECK Flycast: the options file RetroArch would read decides, game first', () => {
+  const on = 'reicast_per_content_vmus = "VMU A1"'
+  const off = 'reicast_per_content_vmus = "disabled"'
+  const core = `${FLYCAST_OPT}/Flycast.opt`
+  const folder = `${FLYCAST_OPT}/dreamcast.opt`
+  const game = `${FLYCAST_OPT}/Crazy Taxi (USA).opt`
+  const perCore = retroArchCfg({
+    savefile_directory: `${RD}/saves`,
+    sort_savefiles_by_content_enable: 'true',
+    system_directory: `${RD}/bios`,
+    global_core_options: 'false'
+  })
+  const global = perCore.replace('global_core_options = "false"', 'global_core_options = "true"')
+  const cases: [string, Record<string, string>, boolean][] = [
+    // Per-core options: Flycast.opt, and the global file only where it is missing.
+    [perCore, { [CORE_OPTIONS_FILE]: off, [core]: on }, true],
+    [perCore, { [CORE_OPTIONS_FILE]: on, [core]: off }, false],
+    [perCore, { [CORE_OPTIONS_FILE]: on }, true],
+    // A core file without the key is the core's default, whatever the global says.
+    [perCore, { [CORE_OPTIONS_FILE]: on, [core]: 'other = "x"' }, false],
+    // Global options: Flycast.opt is never read.
+    [global, { [CORE_OPTIONS_FILE]: on, [core]: off }, true],
+    [global, { [CORE_OPTIONS_FILE]: off, [core]: on }, false],
+    // A game's and a folder's own come first either way.
+    [perCore, { [core]: off, [folder]: on }, true],
+    [global, { [CORE_OPTIONS_FILE]: off, [folder]: on }, true],
+    [perCore, { [folder]: on, [game]: off }, false],
+    [global, { [CORE_OPTIONS_FILE]: off, [game]: on }, true]
+  ]
+  for (const [cfg, files, seeded] of cases) {
+    const all = { [`${RD_CONFIG}/retroarch/retroarch.cfg`]: cfg, ...files }
+    assert.equal(Boolean(flycastSeedFor({ files: all })), seeded, JSON.stringify({ cfg, files }))
+  }
+  // RetroArch's own default is options per core.
+  assert.equal(Boolean(flycastSeedFor({ files: { [CORE_OPTIONS_FILE]: off, [core]: on } })), true)
+})
+
+test('RetroDECK Flycast: the folders are the ones RetroArch hands the core', () => {
+  const on = { [CORE_OPTIONS_FILE]: 'reicast_per_content_vmus = "VMU A1"' }
+  // A game in a folder of its own saves into a folder named after it.
+  const own = flycastSeedFor({ romPath: `${RD}/roms/dreamcast/Shenmue/Shenmue.m3u`, files: on })
+  assert.deepEqual(own, {
+    from: `${RD}/bios/dc/vmu_save_A1.bin`,
+    to: `${RD}/saves/Shenmue/Shenmue.A1.bin`,
+    unless: [`${RD}/saves/Shenmue/MK-51035.A1.bin`]
+  })
+  // No system directory: RetroArch names the content's own folder.
+  const beside = flycastSeedFor({
+    files: {
+      ...on,
+      [`${RD_CONFIG}/retroarch/retroarch.cfg`]: retroArchCfg({
+        savefile_directory: `${RD}/saves`,
+        sort_savefiles_by_content_enable: 'true',
+        system_directory: 'default'
+      })
+    }
+  })
+  assert.ok(beside && 'from' in beside)
+  assert.equal(beside.from, `${RD}/roms/dreamcast/dc/vmu_save_A1.bin`)
+})
+
+test('RetroDECK Flycast: an arcade file or a game without a key is skipped, and says why', () => {
+  const on = { [CORE_OPTIONS_FILE]: 'reicast_per_content_vmus = "VMU A1"' }
+  for (const name of ['game.zip', 'game.7Z', 'game.lst', 'game.bin', 'game.DAT']) {
+    const romPath = `${RD}/roms/dreamcast/${name}`
+    const seed = flycastSeedFor({ romPath, files: on })
+    assert.ok(seed && 'skipped' in seed && /arcade/.test(seed.skipped), romPath)
+  }
+  const unkeyed = flycastSeedFor({ saveTarget: null, files: on })
+  assert.ok(unkeyed && 'skipped' in unkeyed && /product number/.test(unkeyed.skipped))
+})
+
+test('RetroDECK Flycast: an arcade board on the same core has no VMU to seed', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/naomi/game.lst`,
+    system: 'naomi',
+    saveTarget: 'MK-51035',
+    installDir: '/var/rd/install',
+    files: {
+      ...esSystems('naomi', 'Flycast', 'flycast'),
+      [CORE_OPTIONS_FILE]: 'reicast_per_content_vmus = "VMU A1"'
+    }
+  })
+  assert.equal(paths.emulator, 'flycast')
+  assert.equal(paths.seed, undefined)
+})
+
+test('RetroDECK: only Flycast asks for a seed', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/psp/game.iso`,
+    system: 'psp',
+    saveTarget: 'ULUS10064',
+    installDir: '/var/rd/install',
+    files: {
+      ...esSystems('psp', 'PPSSPP', 'ppsspp'),
+      [CORE_OPTIONS_FILE]: 'reicast_per_content_vmus = "VMU A1"'
+    }
+  })
+  assert.equal(paths.seed, undefined)
+})

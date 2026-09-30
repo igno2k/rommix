@@ -99,6 +99,10 @@ function retroDeck(options: {
   remote?: FixtureTree
   /** What a download hands back when it is one file. */
   remoteFile?: string
+  /** The server cannot list this game's saves. */
+  listFails?: boolean
+  /** Every download from the server fails. */
+  downloadFails?: boolean
   /** The command lines of the processes running on this machine. */
   processes?: string[]
 }): {
@@ -107,6 +111,10 @@ function retroDeck(options: {
   saves: string
   backups: string
   uploaded: Uploaded[]
+  /** The flatpak's config root, where RetroArch's files are. */
+  config: string
+  bios: string
+  store: Store
 } {
   const home = scratch()
   const rd = join(home, 'retrodeck')
@@ -130,16 +138,21 @@ function retroDeck(options: {
       `savefile_directory = "${rd}/saves"`,
       `savestate_directory = "${rd}/states"`,
       'sort_savefiles_by_content_enable = "true"',
+      `system_directory = "${rd}/bios"`,
       'sort_savestates_by_content_enable = "true"'
     ].join('\n')
   )
 
   const uploaded: Uploaded[] = []
   const client = {
-    saves: async () => options.saves ?? [],
+    saves: async () => {
+      if (options.listFails) throw new Error('RomM did not answer')
+      return options.saves ?? []
+    },
     states: async () => [],
     devices: async () => [],
     downloadSave: async (_id: number, to: string) => {
+      if (options.downloadFails) throw new Error('the connection dropped')
       if (options.remoteFile !== undefined) {
         writeFileSync(to, Buffer.from(options.remoteFile, 'latin1'))
         return
@@ -193,14 +206,18 @@ function retroDeck(options: {
   } as RommRom
 
   const backups = join(home, 'save-copies')
+  const store = new Store(join(home, 'rommix'))
   return {
-    sync: new SaveSync(new Store(join(home, 'rommix')), client, backups, async (marker) =>
+    store,
+    sync: new SaveSync(store, client, backups, async (marker) =>
       (options.processes ?? []).filter((line) => line.includes(marker))
     ),
     target: { rom, emulator, system: options.system, romPath },
     saves: join(rd, 'saves'),
     backups,
-    uploaded
+    uploaded,
+    config,
+    bios: join(rd, 'bios')
   }
 }
 
@@ -598,5 +615,136 @@ describe('Flycast per-game VMU', () => {
     })
     await rig.sync.pullNow(rig.target)
     assert.deepEqual(readdirSync(join(rig.saves, 'dreamcast')), ['MK-51035.A1.bin'])
+  })
+})
+
+describe('Flycast first-launch VMU', () => {
+  const SHARED = 'the shared VMU, every game on it'
+
+  /** What a launch does before the spawn: the pull, then the seed judged by it. */
+  async function launchSteps(rig: ReturnType<typeof retroDeck>): Promise<unknown> {
+    const pulled = await rig.sync.pull(rig.target).catch(() => null)
+    return rig.sync.seed(rig.target, pulled)
+  }
+
+  /** A Dreamcast game, with per-game VMUs set as `option` and a shared VMU in the BIOS folder. */
+  function dreamcast(
+    options: {
+      option?: string | null
+      romFile?: string
+      shared?: boolean
+      saves?: RommSave[]
+      listFails?: boolean
+      downloadFails?: boolean
+    } = {}
+  ): ReturnType<typeof retroDeck> & { dir: string } {
+    const rig = retroDeck({
+      system: 'dreamcast',
+      romFile: options.romFile ?? 'Crazy Taxi (USA).chd',
+      saveTarget: 'MK-51035',
+      saves: options.saves,
+      listFails: options.listFails,
+      downloadFails: options.downloadFails,
+      remoteFile: 'VMU from far'
+    })
+    const option = options.option === undefined ? 'VMU A1' : options.option
+    if (option !== null) {
+      writeFileSync(
+        join(rig.config, 'retroarch', 'retroarch-core-options.cfg'),
+        `reicast_per_content_vmus = "${option}"\n`
+      )
+    }
+    if (options.shared !== false) plant(join(rig.bios, 'dc'), { 'vmu_save_A1.bin': SHARED })
+    return { ...rig, dir: join(rig.saves, 'dreamcast') }
+  }
+
+  test('with per-game VMUs off nothing is written', async () => {
+    const rig = dreamcast({ option: 'disabled' })
+    assert.equal(await launchSteps(rig), null)
+    assert.equal(existsSync(rig.dir), false)
+  })
+
+  test('a game with its own VMU is left as it is', async () => {
+    const rig = dreamcast()
+    plant(rig.dir, { 'MK-51035.A1.bin': 'the game own VMU' })
+    const before = hashes(rig.dir)
+    assert.equal(await launchSteps(rig), 'present')
+    assert.deepEqual(hashes(rig.dir), before)
+  })
+
+  test('a VMU under the old name is left as it is', async () => {
+    const rig = dreamcast()
+    plant(rig.dir, { 'Crazy Taxi (USA).A1.bin': 'what an older Flycast wrote' })
+    assert.equal(await launchSteps(rig), 'present')
+    assert.deepEqual(readdirSync(rig.dir), ['Crazy Taxi (USA).A1.bin'])
+    assert.equal(
+      readFileSync(join(rig.dir, 'Crazy Taxi (USA).A1.bin'), 'utf8'),
+      'what an older Flycast wrote'
+    )
+  })
+
+  test('a first launch gets the shared VMU under the old name, exactly once', async () => {
+    const rig = dreamcast()
+    plant(rig.dir, { 'T-8101N.A1.bin': 'the other game VMU' })
+
+    assert.equal(await launchSteps(rig), 'planted')
+    assert.deepEqual(readdirSync(rig.dir).sort(), ['Crazy Taxi (USA).A1.bin', 'T-8101N.A1.bin'])
+    assert.equal(readFileSync(join(rig.dir, 'Crazy Taxi (USA).A1.bin'), 'utf8'), SHARED)
+    assert.equal(readFileSync(join(rig.dir, 'T-8101N.A1.bin'), 'utf8'), 'the other game VMU')
+
+    // The shared VMU moves on; the copy the game already has does not follow it.
+    plant(join(rig.bios, 'dc'), { 'vmu_save_A1.bin': 'played something else since' })
+    assert.equal(await launchSteps(rig), 'present')
+    assert.equal(readFileSync(join(rig.dir, 'Crazy Taxi (USA).A1.bin'), 'utf8'), SHARED)
+    assert.deepEqual(readdirSync(rig.dir).sort(), ['Crazy Taxi (USA).A1.bin', 'T-8101N.A1.bin'])
+  })
+
+  test('a VMU the pull brought down is the game\u2019s own, and nothing is seeded', async () => {
+    const rig = dreamcast({
+      saves: [
+        remoteSave({ emulator: 'flycast', file_name: 'Crazy Taxi (USA).bin', file_size_bytes: 12 })
+      ]
+    })
+    assert.equal(await launchSteps(rig), 'present')
+    assert.deepEqual(readdirSync(rig.dir), ['MK-51035.A1.bin'])
+  })
+
+  test('with automatic pulls off RomMix writes no save, a seed included', async () => {
+    const rig = dreamcast()
+    rig.store.updateSettings({ syncSavesDown: false })
+    assert.equal(await launchSteps(rig), null)
+    assert.equal(existsSync(rig.dir), false)
+  })
+
+  test('a pull that could not list the server seeds nothing', async () => {
+    const rig = dreamcast({ listFails: true })
+    await assert.rejects(rig.sync.pull(rig.target))
+    assert.equal(await launchSteps(rig), null)
+    assert.equal(existsSync(rig.dir), false)
+  })
+
+  test('a pull that lost the game\u2019s own VMU on the way seeds nothing', async () => {
+    const rig = dreamcast({
+      downloadFails: true,
+      saves: [
+        remoteSave({ emulator: 'flycast', file_name: 'Crazy Taxi (USA).bin', file_size_bytes: 12 })
+      ]
+    })
+    const pulled = await rig.sync.pull(rig.target)
+    assert.equal(pulled.failed, 1)
+    assert.equal(await rig.sync.seed(rig.target, pulled), null)
+    assert.deepEqual(existsSync(rig.dir) ? readdirSync(rig.dir) : [], [])
+  })
+
+  test('an archive is skipped', async () => {
+    const rig = dreamcast({ romFile: 'Crazy Taxi (USA).zip' })
+    assert.equal(await launchSteps(rig), null)
+    assert.equal(existsSync(rig.dir), false)
+  })
+
+  test('without a shared VMU there is nothing to copy', async () => {
+    const rig = dreamcast({ shared: false })
+    assert.equal(await launchSteps(rig), 'no-source')
+    assert.equal(existsSync(rig.dir), false)
   })
 })

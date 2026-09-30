@@ -1,4 +1,4 @@
-import { mkdir, readdir, realpath, rename, rm, stat } from 'node:fs/promises'
+import { copyFile, link, lstat, mkdir, readdir, realpath, rename, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { SaveUnit } from '@config/emulators'
 import { t } from './i18n.ts'
@@ -366,4 +366,76 @@ export async function removeUnit(dir: string, unit: SaveUnit, backups: string): 
   }
   for (const entry of owned) await rm(join(dir, entry.name), { recursive: true, force: true })
   return owned.map((entry) => entry.name)
+}
+
+/** What `plantSeed` did. */
+export type SeedOutcome = 'planted' | 'present' | 'no-source'
+
+/** Is anything at all at `path` — a file, a folder, a link to nowhere? */
+async function occupied(path: string): Promise<boolean> {
+  return lstat(path).then(
+    () => true,
+    (cause: NodeJS.ErrnoException) => {
+      if (cause.code === 'ENOENT' || cause.code === 'ENOTDIR') return false
+      throw cause
+    }
+  )
+}
+
+/**
+ * Copy `seed.from` to `seed.to`, where neither `seed.to` nor anything in
+ * `seed.unless` is there yet — see `SaveSeed`.
+ *
+ * Never over anything. The copy is written beside its target under a name no
+ * emulator opens, and then linked into place, which fails rather than replaces
+ * where something appeared in between. A filesystem without hard links — the
+ * exFAT of an SD card — gets a rename instead, after one more look.
+ */
+export async function plantSeed(seed: {
+  from: string
+  to: string
+  unless: readonly string[]
+}): Promise<SeedOutcome> {
+  for (const path of [seed.to, ...seed.unless]) {
+    if (await occupied(path)) {
+      log.debug('saves', 'no seed needed, the game has its own', { present: path })
+      return 'present'
+    }
+  }
+  const source = await stat(seed.from).catch((cause: NodeJS.ErrnoException) => {
+    if (cause.code === 'ENOENT' || cause.code === 'ENOTDIR') return null
+    throw cause
+  })
+  if (!source?.isFile()) {
+    log.info('saves', 'no seed, there is nothing to copy', { from: seed.from })
+    return 'no-source'
+  }
+
+  const dir = dirname(seed.to)
+  await mkdir(dir, { recursive: true })
+  const staged = join(dir, `.${basename(seed.to)}.rommix-seed-${process.pid}`)
+  try {
+    await copyFile(seed.from, staged)
+    try {
+      await link(staged, seed.to)
+    } catch (cause) {
+      const code = (cause as NodeJS.ErrnoException).code
+      if (code === 'EEXIST') return 'present'
+      log.debug('saves', 'no hard link here, renaming the seed into place', { dir, code })
+      if (await occupied(seed.to)) return 'present'
+      await rename(staged, seed.to)
+    }
+    log.info('saves', 'seeded a first-launch save from the shared one', {
+      from: seed.from,
+      to: seed.to
+    })
+    return 'planted'
+  } finally {
+    await rm(staged, { force: true }).catch((cause: unknown) =>
+      log.warn('saves', 'could not remove a seed’s staging copy', {
+        staged,
+        reason: (cause as Error).message
+      })
+    )
+  }
 }

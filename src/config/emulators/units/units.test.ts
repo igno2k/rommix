@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import type { SaveEnvironment, SaveUnit } from '../savepaths.ts'
-import { dreamcastUnit } from './dc.ts'
+import { dreamcastSeed, dreamcastUnit, flycastContentName } from './dc.ts'
 import { dolphinRegion, gameCubeUnit } from './gc.ts'
 import {
   dreamcastVmuName,
@@ -221,5 +221,72 @@ describe('what a game owns', () => {
 
   test('Dreamcast: no key, no unit', () => {
     assert.equal(dreamcastUnit(' '), null)
+  })
+})
+
+describe('the Dreamcast first-launch VMU', () => {
+  test('the content name is the file name as Flycast cuts it', () => {
+    assert.equal(flycastContentName('/roms/dreamcast/Crazy Taxi (USA).chd'), 'Crazy Taxi (USA)')
+    assert.equal(flycastContentName('/roms/dreamcast/Game v1.1.gdi'), 'Game v1.1')
+    assert.equal(flycastContentName('/roms/dreamcast/noext'), 'noext')
+    assert.equal(flycastContentName('/roms/dreamcast/.gdi'), 'vmu_save')
+    assert.equal(flycastContentName('C:\\roms\\Game.cdi'), 'Game')
+
+    // 127 bytes of the name survive, and the last dot is looked for in those.
+    const long = `${'A'.repeat(120)} v1.2 (Disc 1).chd`
+    assert.equal(flycastContentName(`/r/${long}`), `${'A'.repeat(120)} v1`)
+    // A cut inside a character leaves no name that can be written back.
+    const wide = `${'A'.repeat(126)}\u00e9.chd`
+    assert.equal(flycastContentName(`/r/${wide}`), null)
+    // A cut after a whole character is fine.
+    assert.equal(flycastContentName(`/r/${'A'.repeat(125)}\u00e9.chd`), `${'A'.repeat(125)}\u00e9`)
+  })
+
+  const input = {
+    option: 'VMU A1',
+    key: DC_KEY,
+    romPath: '/rd/roms/dreamcast/Crazy Taxi (USA).chd',
+    saveDir: '/rd/saves/dreamcast',
+    systemDir: '/rd/bios'
+  }
+
+  test('the shared A1 VMU goes to the old name, unless the game has its own', () => {
+    assert.deepEqual(dreamcastSeed(input), {
+      from: '/rd/bios/dc/vmu_save_A1.bin',
+      to: '/rd/saves/dreamcast/Crazy Taxi (USA).A1.bin',
+      unless: ['/rd/saves/dreamcast/MK-51035.A1.bin']
+    })
+    assert.deepEqual(
+      dreamcastSeed({ ...input, key: 'HDR 0001' }),
+      dreamcastSeed({ ...input, key: 'HDR_0001' })
+    )
+  })
+
+  test('nothing while A1 is the shared VMU, as Flycast compares the option', () => {
+    for (const option of [null, 'disabled', 'vmu a1', 'VMU A1 ', 'All vmus']) {
+      assert.equal(dreamcastSeed({ ...input, option }), null, String(option))
+    }
+    assert.ok(dreamcastSeed({ ...input, option: 'All VMUs' }))
+  })
+
+  test('the disc formats Flycast runs as a Dreamcast are seeded', () => {
+    for (const ext of ['chd', 'cdi', 'gdi', 'cue', 'm3u', 'CHD']) {
+      const seed = dreamcastSeed({ ...input, romPath: `/r/game.${ext}` })
+      assert.ok(seed && 'from' in seed, ext)
+    }
+  })
+
+  test('an arcade file, a missing key or an uncuttable name is skipped with a reason', () => {
+    const arcade = ['/r/game.zip', '/r/game.7z', '/r/GAME.ZIP', '/r/a.lst', '/r/a.BIN', '/r/a.dat']
+    for (const romPath of arcade) {
+      const seed = dreamcastSeed({ ...input, romPath })
+      assert.ok(seed && 'skipped' in seed, romPath)
+    }
+    for (const key of [null, '', '   ']) {
+      const seed = dreamcastSeed({ ...input, key })
+      assert.ok(seed && 'skipped' in seed, String(key))
+    }
+    const seed = dreamcastSeed({ ...input, romPath: `/r/${'A'.repeat(126)}\u00e9.chd` })
+    assert.ok(seed && 'skipped' in seed)
   })
 })

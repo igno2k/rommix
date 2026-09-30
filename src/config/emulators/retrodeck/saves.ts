@@ -1,15 +1,22 @@
 import type { Text } from '@shared/i18n'
 import { coreForSystem } from '../../systems.ts'
 import { iniValue } from '../ini.ts'
-import { libretroSavePaths, readLibretroConfig, LIBRETRO_TAG } from '../libretro.ts'
+import {
+  libretroSavePaths,
+  libretroSystemDir,
+  readLibretroConfig,
+  LIBRETRO_TAG
+} from '../libretro.ts'
+import type { LibretroConfig } from '../libretro.ts'
 import { baseName, directory, joinPath, perRom, shared, unit } from '../savepaths.ts'
-import type { SaveContext, SaveLocation, SavePaths, SaveUnit } from '../savepaths.ts'
-import { dreamcastUnit } from '../units/dc.ts'
+import type { SaveContext, SaveLocation, SavePaths, SaveSeed, SaveUnit } from '../savepaths.ts'
+import { dreamcastSeed, dreamcastUnit } from '../units/dc.ts'
 import { dolphinRegion, gameCubeUnit } from '../units/gc.ts'
 import { gameCubeId, GAMECUBE_HEAD_BYTES } from '../units/keys.ts'
 import { ps2Unit, PS2_SUPERBLOCK } from '../units/ps2.ts'
 import { pspUnit } from '../units/psp.ts'
 import { RETRODECK_APP_ID } from './appid.ts'
+import { flycastOptionFiles, flycastVmuOption } from './flycast.ts'
 
 /**
  * Where RetroDECK's bundled emulators keep their saves.
@@ -604,7 +611,43 @@ export function retroDeckSavePaths(ctx: SaveContext): SavePaths {
     }),
     emulator: named ?? LIBRETRO_TAG
   }
-  return named ? { ...paths, ...coreUnit(ctx, named, paths.saves) } : paths
+  if (!named) return paths
+  const seed = named === 'flycast' ? flycastSeed(ctx, config, paths.saves) : null
+  return { ...paths, ...coreUnit(ctx, named, paths.saves), ...(seed ? { seed } : {}) }
+}
+
+/**
+ * The shared VMU, copied in for a Dreamcast game that has no VMU of its own
+ * yet — see `dreamcastSeed`.
+ *
+ * The folders are the ones RetroArch hands the core: the save folder the
+ * layout above resolved, and the system folder its config names, where Flycast
+ * keeps the shared VMU under `dc/`.
+ */
+function flycastSeed(
+  ctx: SaveContext,
+  config: LibretroConfig,
+  saves: SaveLocation | null
+): SaveSeed | null {
+  // NAOMI and Atomiswave run on the same core and have no VMU to seed.
+  if (ctx.system !== 'dreamcast' || !saves || !ctx.configDir) return null
+  const romName = baseName(ctx.romPath)
+  const option = flycastVmuOption(
+    ctx.env,
+    flycastOptionFiles(
+      ctx.configDir,
+      romName.replace(/\.[^.]*$/, ''),
+      baseName(ctx.romDir),
+      config.globalCoreOptions
+    )
+  )
+  return dreamcastSeed({
+    option,
+    key: saveKey(ctx),
+    romPath: ctx.romPath,
+    saveDir: saves.dir,
+    systemDir: libretroSystemDir(config, ctx.romDir)
+  })
 }
 
 /**

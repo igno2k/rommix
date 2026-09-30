@@ -44,6 +44,15 @@ export interface LibretroConfig {
   sortSavestatesByContent: boolean
   savefilesInContentDir: boolean
   savestatesInContentDir: boolean
+  /** Where cores find their system files, from `system_directory`. */
+  systemDir: string | null
+  /** `systemfiles_in_content_dir`: the ROM's own folder is the system folder. */
+  systemfilesInContentDir: boolean
+  /**
+   * `global_core_options`: every core's options come from the one global file
+   * rather than a file per core.
+   */
+  globalCoreOptions: boolean
   /** Core last loaded, from `libretro_path`, without the `_libretro.so`. */
   activeCore: string | null
   /** The directory cores are loaded from, from `libretro_directory`. */
@@ -66,6 +75,9 @@ const LIBRETRO_DEFAULTS: LibretroConfig = {
   sortSavestatesByContent: false,
   savefilesInContentDir: false,
   savestatesInContentDir: false,
+  systemDir: null,
+  systemfilesInContentDir: false,
+  globalCoreOptions: false,
   activeCore: null,
   coresDir: null,
   buildbotUrl: null
@@ -77,7 +89,9 @@ const BOOL_KEYS: Readonly<Record<string, keyof LibretroConfig>> = {
   sort_savestates_enable: 'sortSavestatesByCore',
   sort_savestates_by_content_enable: 'sortSavestatesByContent',
   savefiles_in_content_dir: 'savefilesInContentDir',
-  savestates_in_content_dir: 'savestatesInContentDir'
+  savestates_in_content_dir: 'savestatesInContentDir',
+  systemfiles_in_content_dir: 'systemfilesInContentDir',
+  global_core_options: 'globalCoreOptions'
 }
 
 /**
@@ -114,7 +128,10 @@ export function readLibretroConfig(
       if (key === 'savefile_directory') config.savefileDir = expandHome(value, home)
       else if (key === 'savestate_directory') config.savestateDir = expandHome(value, home)
       else if (key === 'libretro_directory') config.coresDir = expandHome(value, home)
-      else if (key === 'core_updater_buildbot_cores_url' && value) {
+      else if (key === 'system_directory') {
+        // `default` is how RetroArch writes a directory setting left empty.
+        config.systemDir = value === 'default' ? null : expandHome(value, home)
+      } else if (key === 'core_updater_buildbot_cores_url' && value) {
         // A trailing slash so a file name can simply be appended. One is
         // normally written, but the setting is user-editable.
         config.buildbotUrl = value.endsWith('/') ? value : `${value}/`
@@ -329,4 +346,16 @@ export function libretroSavePaths(
     emulator: core ?? LIBRETRO_TAG,
     alsoAccepts: [LIBRETRO_TAG]
   }
+}
+
+/**
+ * The folder a core is told holds its system files, for one ROM.
+ *
+ * RetroArch answers `RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY` with the folder the
+ * content sits in when `system_directory` is empty or the frontend is told to
+ * keep system files beside the content, and with `system_directory` otherwise
+ * (`runloop.c`).
+ */
+export function libretroSystemDir(config: LibretroConfig, romDir: string): string {
+  return config.systemfilesInContentDir || !config.systemDir ? romDir : config.systemDir
 }

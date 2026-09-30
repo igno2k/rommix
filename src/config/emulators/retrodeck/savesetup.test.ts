@@ -252,6 +252,42 @@ describe('the rules, against RetroDECK as it ships', () => {
   })
 })
 
+describe('which Flycast options file is checked', () => {
+  const OVERRIDE = `${CONFIG}/retroarch/config/Flycast/Flycast.opt`
+  const GLOBAL = `${CONFIG}/retroarch/retroarch-core-options.cfg`
+  const cfg = (global: string): Record<string, string> => ({
+    [`${CONFIG}/retroarch/retroarch.cfg`]: `global_core_options = "${global}"\n`
+  })
+  const core = (files: Record<string, string>) =>
+    evaluateSaveSetup(context(files)).find((one) => one.rule.id === 'flycast.perContentVmuOverride')
+
+  test('with options per core, Flycast.opt, whose absence leaves the global file in charge', () => {
+    for (const files of [cfg('false'), {}]) {
+      const absent = core({ ...files, [GLOBAL]: CORE_OPTIONS })
+      assert.equal(absent?.file, OVERRIDE)
+      assert.equal(absent?.status, 'ok')
+      const off = core({ ...files, [OVERRIDE]: 'reicast_per_content_vmus = "disabled"\n' })
+      assert.deepEqual([off?.file, off?.status], [OVERRIDE, 'drift'])
+    }
+  })
+
+  test('with global options, the global file, and Flycast.opt is not looked at', () => {
+    const found = core({
+      ...cfg('true'),
+      [GLOBAL]: CORE_OPTIONS,
+      [OVERRIDE]: 'reicast_per_content_vmus = "VMU A1"\n'
+    })
+    assert.equal(found?.file, GLOBAL)
+    assert.deepEqual([found?.found, found?.status], ['disabled', 'drift'])
+    assert.equal(core({ ...cfg('true') })?.status, 'missing-file')
+    const fixed = core({
+      ...cfg('true'),
+      [GLOBAL]: setCfgValue(CORE_OPTIONS, 'reicast_per_content_vmus', 'VMU A1')
+    })
+    assert.equal(fixed?.status, 'ok')
+  })
+})
+
 describe('editing', () => {
   test('a RetroArch value is changed on its own line and nowhere else', () => {
     const after = setCfgValue(CORE_OPTIONS, 'reicast_per_content_vmus', 'VMU A1')
