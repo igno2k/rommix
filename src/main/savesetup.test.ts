@@ -128,14 +128,17 @@ describe('the report', () => {
   )
 
   test('no RetroDECK, no report, and none written', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'rommix-savesetup-test-'))
+    scratches.push(configDir)
     const setup = new SaveSetup({
       emulators: async () => [],
       playing: () => false,
       running: async () => [],
-      configDir: mkdtempSync(join(tmpdir(), 'rommix-savesetup-test-')),
+      configDir,
       version: () => 'x'
     })
     assert.equal(await setup.check(), null)
+    assert.deepEqual(readdirSync(configDir), [])
   })
 })
 
