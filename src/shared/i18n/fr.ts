@@ -609,6 +609,26 @@ export const fr: Catalog = {
     "La carte mémoire de PCSX2 dans l'emplacement 1 n'est pas une carte dossier : les sauvegardes de ce jeu ne peuvent pas être distinguées de celles des autres jeux. Convertissez-la en carte dossier dans les réglages de cartes mémoire de PCSX2. Les états de sauvegarde sont synchronisés.",
   'saves.pcsx2CardAmbiguous':
     "PCSX2 a plusieurs cartes mémoire dossier et RomMix ne peut pas savoir laquelle est dans l'emplacement 1. Les états de sauvegarde sont synchronisés.",
+  'saveSetup.pcsx2FolderAutoManage':
+    "PCSX2 ne sépare les sauvegardes de chaque jeu sur une carte dossier que s'il gère la carte jeu par jeu.",
+  'saveSetup.pcsx2CardIsFolder':
+    "La carte de l'emplacement 1 doit être une carte dossier pour synchroniser les sauvegardes d'un seul jeu. Les réglages de cartes mémoire de PCSX2 la convertissent ; RomMix ne le fait pas, car cela déplace les sauvegardes de tous les jeux à la fois.",
+  'saveSetup.dolphinGciFolder':
+    "Dolphin ne garde un fichier par sauvegarde que si l'emplacement A est réglé sur Dossier GCI.",
+  'saveSetup.dolphinGciFolderPath':
+    "RomMix synchronise le dossier GCI propre à Dolphin. Un dossier déplacé ailleurs n'est pas synchronisé ; effacez le chemin dans les réglages GameCube de Dolphin.",
+  'saveSetup.flycastPerContentVmu':
+    'Flycast ne garde une VMU par jeu que si les VMU par jeu sont réglées sur VMU A1.',
+  'saveSetup.flycastOverride':
+    'Un fichier de surcharge remet les VMU par jeu de Flycast sur autre chose que VMU A1.',
+  'saveSetup.retroarchLayout':
+    "RomMix cherche les sauvegardes RetroArch dans un dossier nommé d'après celui de la ROM, sans dossier par cœur ni à côté de la ROM.",
+  'saveSetup.duckstationPerGameCard':
+    'DuckStation ne garde une carte mémoire par jeu que si la carte 1 est réglée sur une par titre de jeu.',
+  'saveSetup.esdeComponent':
+    'Les jeux {system} devraient tourner avec {label}, pour que chaque appareil écrive la même sauvegarde.',
+  'saveSetup.esdeGameOverride':
+    'Certains jeux {system} sont réglés sur autre chose que {label}, et leurs sauvegardes risquent de ne pas se charger sur un autre appareil. Changez-les dans ES-DE.',
   'saves.pcsx2':
     "PCSX2 garde une seule carte mémoire partagée par tous les jeux PS2 : aucune sauvegarde n'appartient donc à celui-ci. Les états de sauvegarde sont synchronisés.",
   'saves.dolphin':

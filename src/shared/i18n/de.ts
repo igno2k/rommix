@@ -614,6 +614,26 @@ export const de: Catalog = {
     'Die Memory Card von PCSX2 in Slot 1 ist keine Ordner-Karte, deshalb lassen sich die Spielstände dieses Spiels nicht von denen der anderen Spiele trennen. Wandle sie in den Memory-Card-Einstellungen von PCSX2 in eine Ordner-Karte um. Savestates werden synchronisiert.',
   'saves.pcsx2CardAmbiguous':
     'PCSX2 hat mehr als eine Ordner-Memory-Card, und RomMix kann nicht erkennen, welche in Slot 1 steckt. Savestates werden synchronisiert.',
+  'saveSetup.pcsx2FolderAutoManage':
+    'PCSX2 trennt die Spielstände der einzelnen Spiele auf einer Ordner-Karte nur, wenn es die Karte pro Spiel verwaltet.',
+  'saveSetup.pcsx2CardIsFolder':
+    'Die Karte in Slot 1 muss eine Ordner-Karte sein, damit die Spielstände eines einzelnen Spiels synchronisiert werden können. Die Memory-Card-Einstellungen von PCSX2 wandeln sie um; RomMix tut das nicht, weil dabei die Spielstände aller Spiele auf einmal verschoben werden.',
+  'saveSetup.dolphinGciFolder':
+    'Dolphin legt nur dann eine Datei pro Spielstand an, wenn Slot A auf GCI-Ordner steht.',
+  'saveSetup.dolphinGciFolderPath':
+    'RomMix synchronisiert den GCI-Ordner von Dolphin selbst. Ein anderswohin verlegter Ordner wird nicht synchronisiert; lösche den Pfad in den GameCube-Einstellungen von Dolphin.',
+  'saveSetup.flycastPerContentVmu':
+    'Flycast legt nur dann eine VMU pro Spiel an, wenn die spielbezogenen VMUs auf VMU A1 stehen.',
+  'saveSetup.flycastOverride':
+    'Eine Override-Datei stellt die spielbezogenen VMUs von Flycast auf etwas anderes als VMU A1 zurück.',
+  'saveSetup.retroarchLayout':
+    'RomMix sucht RetroArch-Spielstände in einem Ordner, der nach dem Ordner der ROM benannt ist, ohne Ordner pro Core und nicht neben der ROM.',
+  'saveSetup.duckstationPerGameCard':
+    'DuckStation legt nur dann eine Memory Card pro Spiel an, wenn Karte 1 auf eine pro Spieltitel steht.',
+  'saveSetup.esdeComponent':
+    '{system}-Spiele sollten mit {label} laufen, damit jedes Gerät denselben Spielstand schreibt.',
+  'saveSetup.esdeGameOverride':
+    'Einige {system}-Spiele laufen mit etwas anderem als {label}, und ihre Spielstände laden auf einem anderen Gerät vielleicht nicht. Ändere sie in ES-DE.',
   'saves.pcsx2':
     'PCSX2 führt eine einzige Memory Card für alle PS2-Spiele, deshalb gehört keine Speicherdatei zu diesem einen Spiel. Savestates werden synchronisiert.',
   'saves.dolphin':

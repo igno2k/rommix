@@ -602,6 +602,26 @@ export const es: Catalog = {
     'La tarjeta de memoria de PCSX2 en la ranura 1 no es una tarjeta de carpeta, así que las partidas de este juego no se pueden separar de las de los demás. Conviértela en tarjeta de carpeta en los ajustes de tarjetas de memoria de PCSX2. Los estados guardados sí se sincronizan.',
   'saves.pcsx2CardAmbiguous':
     'PCSX2 tiene más de una tarjeta de memoria de carpeta y RomMix no puede saber cuál está en la ranura 1. Los estados guardados sí se sincronizan.',
+  'saveSetup.pcsx2FolderAutoManage':
+    'PCSX2 solo separa las partidas de cada juego en una tarjeta de carpeta si gestiona la tarjeta juego a juego.',
+  'saveSetup.pcsx2CardIsFolder':
+    'La tarjeta de la ranura 1 tiene que ser de carpeta para sincronizar las partidas de un solo juego. Los ajustes de tarjetas de memoria de PCSX2 la convierten; RomMix no lo hace, porque mueve las partidas de todos los juegos a la vez.',
+  'saveSetup.dolphinGciFolder':
+    'Dolphin solo guarda un archivo por partida si la ranura A está en Carpeta GCI.',
+  'saveSetup.dolphinGciFolderPath':
+    'RomMix sincroniza la carpeta GCI propia de Dolphin. Una carpeta movida a otro sitio no se sincroniza; borra la ruta en los ajustes de GameCube de Dolphin.',
+  'saveSetup.flycastPerContentVmu':
+    'Flycast solo guarda una VMU por juego si las VMU por juego están en VMU A1.',
+  'saveSetup.flycastOverride':
+    'Un archivo de anulación devuelve las VMU por juego de Flycast a algo distinto de VMU A1.',
+  'saveSetup.retroarchLayout':
+    'RomMix busca las partidas de RetroArch en una carpeta con el nombre de la carpeta de la ROM, sin carpeta por núcleo ni junto a la ROM.',
+  'saveSetup.duckstationPerGameCard':
+    'DuckStation solo guarda una tarjeta de memoria por juego si la tarjeta 1 está en una por título.',
+  'saveSetup.esdeComponent':
+    'Los juegos de {system} deberían ejecutarse con {label}, para que todos los dispositivos escriban la misma partida.',
+  'saveSetup.esdeGameOverride':
+    'Algunos juegos de {system} están configurados con algo distinto de {label}, y puede que sus partidas no carguen en otro dispositivo. Cámbialos en ES-DE.',
   'saves.pcsx2':
     'PCSX2 mantiene una sola tarjeta de memoria compartida por todos los juegos de PS2, así que no hay ninguna partida guardada que pertenezca a este. Los estados guardados sí se sincronizan.',
   'saves.dolphin':

@@ -610,6 +610,26 @@ export const en = {
     "PCSX2's memory card in slot 1 is not a folder card, so this game's saves cannot be told apart from the other games' on it. Convert it to a folder card in PCSX2's memory card settings. Save states are synced.",
   'saves.pcsx2CardAmbiguous':
     'PCSX2 has more than one folder memory card and RomMix cannot tell which one is in slot 1. Save states are synced.',
+  'saveSetup.pcsx2FolderAutoManage':
+    "PCSX2 keeps each game's saves apart on a folder card only when it manages the card per game.",
+  'saveSetup.pcsx2CardIsFolder':
+    "The card in slot 1 has to be a folder card for one game's saves to be synced. PCSX2's memory card settings convert it; RomMix does not, as that moves every game's saves at once.",
+  'saveSetup.dolphinGciFolder':
+    'Dolphin keeps one file per save only with slot A set to GCI Folder.',
+  'saveSetup.dolphinGciFolderPath':
+    "RomMix syncs Dolphin's own GCI folder. A folder moved elsewhere is not synced; clear the path in Dolphin's GameCube settings.",
+  'saveSetup.flycastPerContentVmu':
+    'Flycast keeps a VMU per game only with per-game VMUs set to VMU A1.',
+  'saveSetup.flycastOverride':
+    'An override file sets Flycast’s per-game VMUs back to something other than VMU A1.',
+  'saveSetup.retroarchLayout':
+    "RomMix finds RetroArch saves in a folder named after the ROM's folder, with no folder per core and none beside the ROM.",
+  'saveSetup.duckstationPerGameCard':
+    'DuckStation keeps a memory card per game only with card 1 set to one per game title.',
+  'saveSetup.esdeComponent':
+    '{system} games should run with {label}, so every device writes the same save for them.',
+  'saveSetup.esdeGameOverride':
+    'Some {system} games are set to run with something other than {label}, and their saves may not load on another device. Change them in ES-DE.',
   'saves.pcsx2':
     'PCSX2 keeps one memory card shared by every PS2 game, so there is no save file that belongs to this one. Save states are synced.',
   'saves.dolphin':

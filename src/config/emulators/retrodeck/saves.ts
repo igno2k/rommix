@@ -478,6 +478,15 @@ export function retroDeckComponent(ctx: ComponentContext): string {
 }
 
 /**
+ * The label of the command ES-DE runs a whole system with: the gamelist's
+ * `<alternativeEmulator>`, or the first command ES-DE lists. Null where neither
+ * can be read.
+ */
+export function retroDeckSystemLabel(ctx: Omit<ComponentContext, 'romPath'>): string | null {
+  return commandLabel({ ...ctx, romPath: null })
+}
+
+/**
  * The `<altemulator>` in force for this game, or the label of the command ES-DE
  * would otherwise run.
  *
