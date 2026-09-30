@@ -32,8 +32,64 @@ import type { Text } from '@shared/i18n'
  *  - `shared`     one memory card, NAND or nvram shared by every game. There is
  *                 nothing here that can honestly be attributed to this ROM, so
  *                 it is skipped rather than uploaded under this game's id.
+ *  - `unit`       a folder every game writes to, in which this game's entries
+ *                 can still be told apart by a key the game itself carries — a
+ *                 PS2 folder memory card, Dolphin's GCI folder, PPSSPP's
+ *                 SAVEDATA. Only the entries `unit.owns` claims are synced, and
+ *                 nothing else in the folder is read, written or removed.
  */
-export type SaveMatch = 'rom-stem' | 'directory' | 'shared'
+export type SaveMatch = 'rom-stem' | 'directory' | 'shared' | 'unit'
+
+/**
+ * One game's save data, as the entries it owns inside a folder other games
+ * share.
+ *
+ * The shape is the one Argosy, RomM's reference client, puts on the server, so
+ * a save written here and one written there are the same save: the owned
+ * entries are the roots of one zip, or the one owned file sent as it is. A
+ * manifest or a suffix of RomMix's own would make the two unreadable to each
+ * other, and what is on a server is the part of this that cannot be changed
+ * later.
+ */
+export interface SaveUnit {
+  /**
+   * What names the game's entries: a PS2 serial stem, a GameCube game id, a PSP
+   * disc id, a Dreamcast product number. Logged, never used as a path.
+   */
+  key: string
+  /**
+   * `archive`: every owned entry a root of one zip. `file`: the single owned
+   * file, carried as it is.
+   */
+  carriedAs: 'archive' | 'file'
+  /**
+   * Does the entry `name`, directly inside `dir`, belong to the game?
+   *
+   * `dir` is the location's own folder when the disk is being read, and the
+   * folder an archive was unpacked into when a pull is checking what arrived:
+   * the same predicate answers both, which is what makes "never touches another
+   * game's entries" one rule rather than two that can drift. It is passed in
+   * rather than closed over because some rules read the entry — a GCI header, a
+   * PARAM.SFO — and must read the copy being judged, not the one it would
+   * replace.
+   */
+  owns(name: string, kind: 'file' | 'dir', dir: string): boolean
+  /**
+   * The name a pull writes a `file` unit under when this device has none yet —
+   * the name the emulator will open.
+   */
+  fileName?: string
+  /**
+   * Entries of the shared folder a pull must never create, remove or overwrite,
+   * even when an archive carries them — the folder card's own superblock.
+   */
+  keepsHandsOff?: readonly string[]
+  /**
+   * Tags other clients upload the same files under, accepted and never sent —
+   * see `SavePaths.alsoAccepts`.
+   */
+  alsoAccepts?: readonly string[]
+}
 
 /** One directory an emulator reads and writes save data in. */
 export interface SaveLocation {
@@ -54,6 +110,8 @@ export interface SaveLocation {
    */
   search?: readonly string[]
   match: SaveMatch
+  /** What this game owns inside `dir`. Present exactly when `match` is `unit`. */
+  unit?: SaveUnit
 }
 
 /** Everything a descriptor can say about one game's save data. */
@@ -189,6 +247,17 @@ export interface SaveContext {
   installDir: string | null
   /** The launch variant the user chose, when the emulator offers several. */
   variant?: string
+  /**
+   * What RomM read out of the game to name its saves by — `save_target` and its
+   * layout — or null where the server sent none.
+   *
+   * The only reliable key for the emulators that file every game's save in one
+   * folder under an id from inside the disc: a PS2 serial, a PSP disc id, a
+   * Dreamcast product number. Reading those here would mean parsing ISO9660 and
+   * CHD out of a descriptor, so the server's reading is taken, which is also
+   * what Argosy does.
+   */
+  saveTarget: { key: string; layout: string | null } | null
   env: SaveEnvironment
 }
 
@@ -234,6 +303,11 @@ export function shared(dir: string): SaveLocation {
 /** A location whose whole directory is this game's save data. */
 export function directory(dir: string): SaveLocation {
   return { dir, match: 'directory' }
+}
+
+/** A location in which this game owns only the entries `rule` claims. */
+export function unit(dir: string, rule: SaveUnit): SaveLocation {
+  return { dir, match: 'unit', unit: rule }
 }
 
 /** A location holding files named after the ROM. */

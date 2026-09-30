@@ -20,7 +20,8 @@ import { shadps4 } from './shadps4/index.ts'
 import { EMULATORS } from './index.ts'
 import { isKnownSystem } from '../systems.ts'
 import type { EmulatorDescriptor } from './types.ts'
-import type { SaveContext, SaveEnvironment, SavePaths } from './savepaths.ts'
+import { unit } from './savepaths.ts'
+import type { SaveContext, SaveEnvironment, SavePaths, SaveUnit } from './savepaths.ts'
 import { createI18n, localize } from '@shared/i18n'
 
 /**
@@ -77,6 +78,7 @@ interface ContextOptions {
   dataDir?: string | null
   installDir?: string | null
   variant?: string
+  saveTarget?: SaveContext['saveTarget']
   env?: SaveEnvironment
 }
 
@@ -100,6 +102,7 @@ function context(options: ContextOptions): SaveContext {
     dataDir: options.dataDir ?? null,
     installDir: options.installDir ?? null,
     variant: options.variant,
+    saveTarget: options.saveTarget ?? null,
     env: options.env ?? machine({})
   }
 }
@@ -1387,4 +1390,17 @@ test('every RetroDECK save layout is one a command label reaches', () => {
     [],
     'a save layout no label reaches: name it in COMPONENT_BY_LABEL, or drop the row'
   )
+})
+
+test('a unit location carries the rule that says what in it is the game', () => {
+  const rule: SaveUnit = {
+    key: 'SLUS-20152',
+    carriedAs: 'archive',
+    owns: (name) => name.startsWith('BASLUS-20152')
+  }
+  const location = unit('/saves/ps2/pcsx2/memcards/Mcd001.ps2', rule)
+
+  assert.equal(location.match, 'unit')
+  assert.equal(location.dir, '/saves/ps2/pcsx2/memcards/Mcd001.ps2')
+  assert.equal(location.unit, rule)
 })

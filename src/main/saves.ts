@@ -250,6 +250,9 @@ export class SaveSync {
       dataDir: target.emulator.dataDir,
       installDir: target.emulator.install?.location ?? null,
       variant: target.variant,
+      saveTarget: target.rom.save_target
+        ? { key: target.rom.save_target, layout: target.rom.save_target_layout ?? null }
+        : null,
       env: this.env
     }
 
