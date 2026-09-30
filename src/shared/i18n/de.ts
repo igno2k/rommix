@@ -1065,6 +1065,10 @@ export const de: Catalog = {
     'Von {name} kam nur ein Teil von RomM an, daher blieb die Datei unberührt.',
   'error.saveTreeTooLarge':
     'Dieser Spielstand-Ordner ist zu groß, um als ein Archiv gesendet zu werden.',
+  'error.unitRefused':
+    'Die Kopie auf RomM der unter {name} abgelegten Spielstände enthält Daten, die nicht zu diesem Spiel gehören, daher blieb die gemeinsame Karte unverändert.',
+  'error.unitNoBackup':
+    'RomMix konnte vor dem Ersetzen keine Kopie von {name} anlegen, daher wurde nichts verändert.',
   'error.emptyAssetBody': 'Leerer Dateiinhalt',
   'error.credentialsRequired': 'Benutzername und Passwort sind erforderlich',
   'error.tokenRequired': 'Ein API-Token ist erforderlich',

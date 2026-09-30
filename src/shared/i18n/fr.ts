@@ -1054,6 +1054,10 @@ export const fr: Catalog = {
     "Seule une partie de {name} est arrivée depuis RomM ; le fichier n'a pas été touché.",
   'error.saveTreeTooLarge':
     'Ce dossier de sauvegarde est trop volumineux pour être envoyé en une archive.',
+  'error.unitRefused':
+    "La copie sur RomM des sauvegardes rangées sous {name} contient des données qui ne sont pas celles de ce jeu : la carte partagée n'a pas été modifiée.",
+  'error.unitNoBackup':
+    "RomMix n'a pas pu garder une copie de {name} avant de le remplacer : rien n'a été modifié.",
   'error.emptyAssetBody': 'Corps de fichier vide',
   'error.credentialsRequired': 'L’identifiant et le mot de passe sont obligatoires',
   'error.tokenRequired': 'Un jeton API est obligatoire',

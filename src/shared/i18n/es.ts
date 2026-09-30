@@ -1041,6 +1041,10 @@ export const es: Catalog = {
   'error.saveEndedEarly': 'Solo llegó parte de {name} desde RomM, así que no se tocó el archivo.',
   'error.saveTreeTooLarge':
     'Esta carpeta de partidas es demasiado grande para enviarse como un solo archivo.',
+  'error.unitRefused':
+    'La copia en RomM de las partidas archivadas como {name} contiene datos que no son de este juego, así que la tarjeta compartida no se tocó.',
+  'error.unitNoBackup':
+    'RomMix no pudo guardar una copia de {name} antes de reemplazarlo, así que no se cambió nada.',
   'error.emptyAssetBody': 'Cuerpo de archivo vacío',
   'error.credentialsRequired': 'El usuario y la contraseña son obligatorios',
   'error.tokenRequired': 'Hace falta un token de API',

@@ -1033,6 +1033,10 @@ export const en = {
     'The download ended before the whole file arrived. It will pick up where it left off.',
   'error.saveEndedEarly': 'Only part of {name} arrived from RomM, so it was left alone.',
   'error.saveTreeTooLarge': 'This save folder is too large to send as one archive.',
+  'error.unitRefused':
+    "The copy on RomM of the saves filed under {name} holds data that is not this game's, so the shared card was left as it was.",
+  'error.unitNoBackup':
+    'RomMix could not keep a copy of {name} before replacing it, so nothing was changed.',
   'error.emptyAssetBody': 'Empty asset body',
   'error.credentialsRequired': 'Username and password are required',
   'error.tokenRequired': 'An API token is required',
