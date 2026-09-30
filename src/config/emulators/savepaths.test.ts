@@ -23,6 +23,7 @@ import type { EmulatorDescriptor } from './types.ts'
 import { unit } from './savepaths.ts'
 import type { SaveContext, SaveEnvironment, SavePaths, SaveUnit } from './savepaths.ts'
 import { createI18n, localize } from '@shared/i18n'
+import { gameCubeIso, gci, paramSfo } from './units/fixtures.ts'
 
 /**
  * Save resolution, against a described machine rather than a real one.
@@ -1403,4 +1404,257 @@ test('a unit location carries the rule that says what in it is the game', () => 
   assert.equal(location.match, 'unit')
   assert.equal(location.dir, '/saves/ps2/pcsx2/memcards/Mcd001.ps2')
   assert.equal(location.unit, rule)
+})
+
+// ---------------------------------------------------------------------------
+// RetroDECK: one game's entries in a folder every game shares
+// ---------------------------------------------------------------------------
+
+const RD = '/home/deck/retrodeck'
+const RD_CONFIG = '/var/rd/config'
+
+/** A RetroDECK machine with the component's own files, for the unit rules. */
+function retroDeckUnit(options: {
+  romPath: string
+  system: string
+  saveTarget?: string
+  files?: Record<string, string>
+  dirs?: Record<string, string[]>
+  installDir?: string
+}): SavePaths {
+  return resolve(retrodeck, {
+    romPath: options.romPath,
+    system: options.system,
+    configDir: RD_CONFIG,
+    installDir: options.installDir ?? null,
+    saveTarget: options.saveTarget ? { key: options.saveTarget, layout: null } : null,
+    paths: { home: RD, roms: `${RD}/roms`, saves: `${RD}/saves`, states: `${RD}/states` },
+    env: machine({
+      files: { [`${RD_CONFIG}/retroarch/retroarch.cfg`]: RETRODECK_CFG, ...options.files },
+      dirs: options.dirs
+    })
+  })
+}
+
+const MEMCARDS = `${RD}/saves/ps2/pcsx2/memcards`
+const PCSX2_INI = `${RD_CONFIG}/PCSX2/inis/PCSX2.ini`
+
+test('RetroDECK PCSX2: the game owns its folders on the card slot 1 names', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/ps2/game.chd`,
+    system: 'ps2',
+    saveTarget: 'SLUS-20152',
+    files: {
+      [PCSX2_INI]:
+        '[EmuCore]\nMcdFolderAutoManage = true\n[MemoryCards]\nSlot1_Filename = Mine.ps2\n',
+      [`${MEMCARDS}/Mine.ps2/_pcsx2_superblock`]: 'superblock',
+      [`${MEMCARDS}/Mcd001.ps2/_pcsx2_superblock`]: 'superblock'
+    },
+    dirs: { [MEMCARDS]: ['Mcd001.ps2', 'Mine.ps2'] }
+  })
+
+  assert.equal(paths.saves?.match, 'unit')
+  assert.equal(paths.saves?.dir, `${MEMCARDS}/Mine.ps2`)
+  assert.equal(paths.saves?.unit?.owns('BASLUS-20152AC04', 'dir', `${MEMCARDS}/Mine.ps2`), true)
+  assert.equal(paths.saves?.unit?.owns('_pcsx2_superblock', 'file', `${MEMCARDS}/Mine.ps2`), false)
+  assert.equal(paths.states?.match, 'rom-stem')
+  assert.equal(paths.emulator, 'pcsx2')
+  assert.equal(paths.unsyncableReason, undefined)
+})
+
+test('RetroDECK PCSX2: without the ini, the one folder card there is', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/ps2/game.chd`,
+    system: 'ps2',
+    saveTarget: 'SLUS-20152',
+    files: { [`${MEMCARDS}/Mcd001.ps2/_pcsx2_superblock`]: 'superblock' },
+    dirs: { [MEMCARDS]: ['Mcd001.ps2', 'not-a-card'] }
+  })
+  assert.equal(paths.saves?.dir, `${MEMCARDS}/Mcd001.ps2`)
+})
+
+test('RetroDECK PCSX2: two folder cards and no ini is a choice left to the user', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/ps2/game.chd`,
+    system: 'ps2',
+    saveTarget: 'SLUS-20152',
+    files: {
+      [`${MEMCARDS}/Mcd001.ps2/_pcsx2_superblock`]: 'superblock',
+      [`${MEMCARDS}/Mcd002.ps2/_pcsx2_superblock`]: 'superblock'
+    },
+    dirs: { [MEMCARDS]: ['Mcd001.ps2', 'Mcd002.ps2'] }
+  })
+  assert.equal(paths.saves?.match, 'shared')
+  assert.equal(paths.unsyncableReason, 'saves.pcsx2CardAmbiguous')
+})
+
+test('RetroDECK PCSX2: a raw card in slot 1 is reported, not synced', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/ps2/game.chd`,
+    system: 'ps2',
+    saveTarget: 'SLUS-20152',
+    files: {
+      [PCSX2_INI]: '[MemoryCards]\nSlot1_Filename = Mcd001.ps2\n',
+      [`${MEMCARDS}/Mcd001.ps2`]: 'an 8 MB card image'
+    }
+  })
+  assert.equal(paths.saves?.match, 'shared')
+  assert.equal(paths.unsyncableReason, 'saves.pcsx2NoCard')
+  assert.match(localize(paths.unsyncableReason, ENGLISH) ?? '', /folder card/)
+})
+
+test('RetroDECK PCSX2: a folder card but no key from RomM is not guessed at', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/ps2/game.chd`,
+    system: 'ps2',
+    files: { [`${MEMCARDS}/Mcd001.ps2/_pcsx2_superblock`]: 'superblock' },
+    dirs: { [MEMCARDS]: ['Mcd001.ps2'] }
+  })
+  assert.equal(paths.saves?.match, 'shared')
+  assert.equal(paths.unsyncableReason, 'saves.noSaveTarget')
+  assert.match(localize(paths.unsyncableReason, ENGLISH) ?? '', /RomM 5\.3/)
+})
+
+const DOLPHIN_INI = `${RD_CONFIG}/dolphin-emu/Dolphin.ini`
+
+test('RetroDECK Dolphin: the GCI folder of the region the disc id names', () => {
+  const romPath = `${RD}/roms/gc/Zelda.iso`
+  const paths = retroDeckUnit({
+    romPath,
+    system: 'gc',
+    files: {
+      [romPath]: gameCubeIso('GZLE01'),
+      [DOLPHIN_INI]: '[Core]\nSlotA = 8\nSlotB = 255\n',
+      [`${RD}/saves/gc/dolphin/US/Card A/01-GZLE-a.gci`]: gci('GZLE01', 'a', '')
+    }
+  })
+
+  assert.equal(paths.saves?.match, 'unit')
+  // RetroDECK links `saves/gc/dolphin/US` to Dolphin's own `GC/USA`.
+  assert.equal(paths.saves?.dir, `${RD}/saves/gc/dolphin/US/Card A`)
+  assert.equal(paths.saves?.unit?.key, 'GZLE01')
+  assert.equal(
+    paths.saves?.unit?.owns('01-GZLE-a.gci', 'file', `${RD}/saves/gc/dolphin/US/Card A`),
+    true
+  )
+  assert.equal(paths.states?.dir, `${RD}/states/dolphin`)
+  assert.equal(paths.emulator, 'dolphin')
+})
+
+test('RetroDECK Dolphin: RomM\u2019s key stands in where the image says nothing', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/gc/Zelda.gcz`,
+    system: 'gc',
+    saveTarget: 'GZLP01'
+  })
+  assert.equal(paths.saves?.dir, `${RD}/saves/gc/dolphin/EU/Card A`)
+})
+
+test('RetroDECK Dolphin: a raw card in slot A, or a moved GCI folder, stays shared', () => {
+  for (const ini of ['[Core]\nSlotA = 1\n', '[Core]\nSlotA = 8\nGCIFolderAPath = /mnt/cards\n']) {
+    const paths = retroDeckUnit({
+      romPath: `${RD}/roms/gc/Zelda.gcz`,
+      system: 'gc',
+      saveTarget: 'GZLE01',
+      files: { [DOLPHIN_INI]: ini }
+    })
+    assert.equal(paths.saves?.match, 'shared', ini)
+    assert.equal(paths.unsyncableReason, 'saves.dolphin')
+  }
+})
+
+test('RetroDECK Dolphin: the Wii NAND is one tree for every game', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/wii/game.rvz`,
+    system: 'wii',
+    saveTarget: 'RMGE01'
+  })
+  assert.equal(paths.saves?.match, 'shared')
+  assert.equal(paths.saves?.dir, `${RD}/saves/wii/dolphin`)
+})
+
+test('RetroDECK Dolphin: no id from the image or from RomM, nothing claimed', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/gc/Zelda.gcz`,
+    system: 'gc',
+    saveTarget: 'Zelda'
+  })
+  assert.equal(paths.saves?.match, 'shared')
+  assert.equal(paths.unsyncableReason, 'saves.noSaveTarget')
+})
+
+test('RetroDECK PPSSPP: the save folders of the disc id, in the folder RetroDECK links SAVEDATA to', () => {
+  const savedata = `${RD}/saves/PSP/PPSSPP-SA`
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/psp/game.iso`,
+    system: 'psp',
+    saveTarget: 'ULUS10064',
+    files: { [`${savedata}/ULUS10064INSTALL/PARAM.SFO`]: paramSfo(['CATEGORY']) }
+  })
+  assert.equal(paths.saves?.match, 'unit')
+  assert.equal(paths.saves?.dir, savedata)
+  assert.equal(paths.saves?.unit?.owns('ULUS10064DATA00', 'dir', savedata), true)
+  assert.equal(paths.saves?.unit?.owns('ULUS10064INSTALL', 'dir', savedata), false)
+  assert.equal(paths.states?.match, 'shared')
+  assert.equal(paths.emulator, 'ppsspp')
+
+  const unkeyed = retroDeckUnit({ romPath: `${RD}/roms/psp/game.iso`, system: 'psp' })
+  assert.equal(unkeyed.saves?.match, 'shared')
+  assert.equal(unkeyed.unsyncableReason, 'saves.ppsspp')
+})
+
+/** RetroDECK's ES-DE system list, with one command for one system. */
+function esSystems(system: string, label: string, core: string): Record<string, string> {
+  return {
+    [`/var/rd/install/${ES_SYSTEMS_PATH}`]:
+      `<systemList><system><name>${system}</name>` +
+      `<command label="${label}">%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/${core}_libretro.so %ROM%</command>` +
+      '</system></systemList>'
+  }
+}
+const ES_SYSTEMS_PATH =
+  'files/retrodeck/components/es-de/share/es-de/resources/systems/linux/es_systems.xml'
+
+test('RetroDECK Flycast: the product-named VMU in the core\u2019s save folder', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/dreamcast/Crazy Taxi.chd`,
+    system: 'dreamcast',
+    saveTarget: 'MK-51035',
+    installDir: '/var/rd/install',
+    files: esSystems('dreamcast', 'Flycast', 'flycast')
+  })
+  assert.equal(paths.saves?.match, 'unit')
+  assert.equal(paths.saves?.dir, `${RD}/saves/dreamcast`)
+  assert.equal(paths.saves?.unit?.carriedAs, 'file')
+  assert.equal(paths.saves?.unit?.fileName, 'MK-51035.A1.bin')
+  assert.equal(paths.states?.match, 'rom-stem')
+  assert.equal(paths.emulator, 'flycast')
+})
+
+test('RetroDECK Flycast: without a key the core\u2019s own layout stands, and says why', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/dreamcast/Crazy Taxi.chd`,
+    system: 'dreamcast',
+    installDir: '/var/rd/install',
+    files: esSystems('dreamcast', 'Flycast', 'flycast')
+  })
+  assert.equal(paths.saves?.match, 'rom-stem')
+  assert.equal(paths.unsyncableReason, 'saves.noSaveTarget')
+})
+
+test('RetroDECK PPSSPP core: the memory stick inside the core\u2019s save folder', () => {
+  const paths = retroDeckUnit({
+    romPath: `${RD}/roms/psp/game.iso`,
+    system: 'psp',
+    saveTarget: 'ULUS10064',
+    installDir: '/var/rd/install',
+    files: {
+      ...esSystems('psp', 'PPSSPP', 'ppsspp'),
+      [`${RD}/ES-DE/gamelists/psp/gamelist.xml`]:
+        '<gameList><alternativeEmulator><label>PPSSPP</label></alternativeEmulator></gameList>'
+    }
+  })
+  assert.equal(paths.saves?.match, 'unit')
+  assert.equal(paths.saves?.dir, `${RD}/saves/psp/PSP/SAVEDATA`)
+  assert.equal(paths.emulator, 'ppsspp')
 })

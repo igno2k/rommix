@@ -274,8 +274,15 @@ one RomMix folder you point every emulator at.
   sends only what you approve.
 
 Saves named after the ROM sync cleanly, and Switch-family saves are matched by
-title id. Emulators that share one memory card between every game cannot be
-synced, and RomMix says so rather than uploading the wrong data.
+title id. Under RetroDECK, a game's own entries on a shared card are synced on
+their own — its folders on a PCSX2 folder card, its `.gci` files in Dolphin's
+GCI folder, its PPSSPP `SAVEDATA` folders, and Flycast's per-game VMU — in the
+same shape [Argosy](https://github.com/rommapp/argosy-launcher) uploads them, so the two
+read each other's saves. That needs RomM 5.3 or later, which reads the serial or
+disc id each game's saves are filed under; a pull replaces that game's entries
+and never another's. Emulators that share one memory card between every game
+with nothing to tell them apart cannot be synced, and RomMix says so rather than
+uploading the wrong data.
 
 **Games → Downloads → Ask before deleting a downloaded game**, on by default.
 

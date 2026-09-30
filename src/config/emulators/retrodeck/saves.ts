@@ -1,8 +1,14 @@
 import type { Text } from '@shared/i18n'
 import { coreForSystem } from '../../systems.ts'
+import { iniValue } from '../ini.ts'
 import { libretroSavePaths, readLibretroConfig, LIBRETRO_TAG } from '../libretro.ts'
-import { baseName, directory, joinPath, perRom, shared } from '../savepaths.ts'
+import { baseName, directory, joinPath, perRom, shared, unit } from '../savepaths.ts'
 import type { SaveContext, SaveLocation, SavePaths } from '../savepaths.ts'
+import { dreamcastUnit } from '../units/dc.ts'
+import { dolphinRegion, gameCubeUnit } from '../units/gc.ts'
+import { gameCubeId, GAMECUBE_HEAD_BYTES } from '../units/keys.ts'
+import { ps2Unit, PS2_SUPERBLOCK } from '../units/ps2.ts'
+import { pspUnit } from '../units/psp.ts'
 
 /**
  * Where RetroDECK's bundled emulators keep their saves.
@@ -40,11 +46,11 @@ function at(path: string | null, make: (dir: string) => SaveLocation): SaveLocat
 /**
  * The memory-card emulators.
  *
- * PCSX2 and DuckStation are both configured by RetroDECK with *shared* cards —
- * `shared_card_1.mcd`, `Mcd001.ps2` — rather than one per game. Their save
- * states are per-game and are synced; the cards are not, because a card holds
- * every PS1 or PS2 game the user has played and uploading it under one game's
- * id would attach the lot to that game.
+ * DuckStation is configured by RetroDECK with a *shared* card,
+ * `shared_card_1.mcd`, rather than one per game. Its save states are per-game
+ * and are synced; the card is not, because it holds every PS1 game the user
+ * has played and uploading it under one game's id would attach the lot to
+ * that game.
  */
 function cardEmulator(component: string, reason: Text): ComponentSaves {
   return (ctx) => ({
@@ -54,21 +60,138 @@ function cardEmulator(component: string, reason: Text): ComponentSaves {
   })
 }
 
+/** A component's config file, below the flatpak's config root. */
+function configText(ctx: SaveContext, ...segments: readonly string[]): string | null {
+  return ctx.configDir ? ctx.env.text(joinPath(ctx.configDir, ...segments)) : null
+}
+
+/** A shared folder with the reason nothing in it can be synced. */
+function unsyncable(
+  dir: string | null,
+  reason: Text
+): Pick<SavePaths, 'saves' | 'unsyncableReason'> {
+  return { saves: at(dir, shared), unsyncableReason: reason }
+}
+
+/**
+ * The folder memory card PCSX2 has in slot 1, or why there is none to sync.
+ *
+ * RetroDECK ships PCSX2 with folder cards managed per game
+ * (`McdFolderAutoManage`), and a folder card is a directory holding PCSX2's
+ * `_pcsx2_superblock` beside one folder per save — which is what lets one
+ * game's saves be told apart at all. The card is the one `[MemoryCards]
+ * Slot1_Filename` names in `PCSX2.ini`, `Mcd001.ps2` in the config RetroDECK
+ * ships. Where the ini cannot be read the card is the only folder card there
+ * is, and two of them is a choice RomMix will not guess at, as Argosy will not.
+ *
+ * A card that is still a raw image is reported rather than converted: that is
+ * a migration of every game's saves at once, and PCSX2's own memory-card
+ * settings do it.
+ */
+function pcsx2Card(ctx: SaveContext, memcards: string): { dir: string } | { reason: Text } {
+  const named = iniValue(
+    configText(ctx, 'PCSX2', 'inis', 'PCSX2.ini'),
+    'MemoryCards',
+    'Slot1_Filename'
+  )
+  if (named) {
+    const dir = joinPath(memcards, named)
+    return ctx.env.exists(joinPath(dir, PS2_SUPERBLOCK)) ? { dir } : { reason: 'saves.pcsx2NoCard' }
+  }
+  const cards = ctx.env
+    .dirs(memcards)
+    .filter((name) => ctx.env.exists(joinPath(memcards, name, PS2_SUPERBLOCK)))
+  if (cards.length > 1) return { reason: 'saves.pcsx2CardAmbiguous' }
+  return cards.length === 1
+    ? { dir: joinPath(memcards, cards[0]) }
+    : { reason: 'saves.pcsx2NoCard' }
+}
+
+/**
+ * The key RomM read out of this game, where the server sent one.
+ *
+ * Without it a game's entries on a shared card cannot be told from another's,
+ * so the answer is "nothing here is this game's" and a reason that says to
+ * rescan on a server that reads them.
+ */
+function saveKey(ctx: SaveContext): string | null {
+  return ctx.saveTarget?.key.trim() || null
+}
+
+/**
+ * The GameCube disc id, from the image first and RomM's reading second.
+ *
+ * The image is the authority Dolphin itself uses, and reading six bytes of it
+ * costs nothing where the image is a plain ISO or an RVZ. RomM's key stands in
+ * for the containers that compress the header away, and only where it has the
+ * shape of a disc id: a server that sends something else for GameCube is not
+ * one to pair saves on.
+ */
+function gameCubeKey(ctx: SaveContext): string | null {
+  const read = gameCubeId(ctx.env.head(ctx.romPath, GAMECUBE_HEAD_BYTES))
+  if (read) return read
+  const key = saveKey(ctx)?.toUpperCase() ?? null
+  return key && /^[A-Z0-9]{4}([A-Z0-9]{2})?$/.test(key) ? key : null
+}
+
+/**
+ * The links RetroDECK makes from its own saves tree into Dolphin's per-region
+ * card folders — `saves/gc/dolphin/US` for Dolphin's `GC/USA`, and so on — in
+ * its `component_prepare.sh`.
+ */
+const DOLPHIN_REGION_LINKS: Readonly<Record<'USA' | 'EUR' | 'JAP', string>> = {
+  USA: 'US',
+  EUR: 'EU',
+  JAP: 'JP'
+}
+
 export const RETRODECK_COMPONENTS: Readonly<Record<string, ComponentSaves>> = {
-  pcsx2: cardEmulator('pcsx2', 'saves.retrodeckPcsx2'),
+  /**
+   * PCSX2's saves are the game's own folders on the folder card in slot 1.
+   * Its states are per-game files named after the ROM.
+   */
+  pcsx2: (ctx) => {
+    const states = at(under(statesRoot(ctx), ctx.system, 'pcsx2'), (dir) => perRom(dir))
+    const memcards = under(savesRoot(ctx), ctx.system, 'pcsx2', 'memcards')
+    if (!memcards) return { saves: null, states }
+
+    const card = pcsx2Card(ctx, memcards)
+    if ('reason' in card) return { ...unsyncable(memcards, card.reason), states }
+    const key = saveKey(ctx)
+    const rule = key ? ps2Unit(key) : null
+    if (!rule) return { ...unsyncable(memcards, 'saves.noSaveTarget'), states }
+    return { saves: unit(card.dir, rule), states }
+  },
   duckstation: cardEmulator('duckstation', 'saves.retrodeckDuckstation'),
 
   /**
-   * Dolphin keeps GameCube memory cards under a region folder and the Wii NAND
-   * as one tree, neither of which is per-game. Its states are, and they sit at
-   * `<states>/dolphin` — no system component at all, which is why the layout is
-   * spelled out per component here rather than derived.
+   * Dolphin keeps GameCube saves as one `.gci` per save in a folder per region
+   * when slot A is set to "GCI Folder" (`SlotA = 8`), which is what RetroDECK
+   * ships — and then a game's own files can be told apart by the disc id in
+   * their headers. A raw card image in slot A, or a folder moved elsewhere with
+   * `GCIFolderAPath`, is a layout RomMix does not write into. The Wii NAND is
+   * one tree for every game and stays shared.
+   *
+   * States are per-game, and sit at `<states>/dolphin` — no system component
+   * at all, which is why the layout is spelled out per component here rather
+   * than derived.
    */
-  dolphin: (ctx) => ({
-    saves: at(under(savesRoot(ctx), ctx.system, 'dolphin'), shared),
-    states: at(under(statesRoot(ctx), 'dolphin'), (dir) => perRom(dir)),
-    unsyncableReason: 'saves.dolphin'
-  }),
+  dolphin: (ctx) => {
+    const states = at(under(statesRoot(ctx), 'dolphin'), (dir) => perRom(dir))
+    const cards = under(savesRoot(ctx), ctx.system, 'dolphin')
+    if (ctx.system !== 'gc' || !cards) return { ...unsyncable(cards, 'saves.dolphin'), states }
+
+    const ini = configText(ctx, 'dolphin-emu', 'Dolphin.ini')
+    const slotA = iniValue(ini, 'Core', 'SlotA')
+    const moved = iniValue(ini, 'Core', 'GCIFolderAPath')
+    if ((slotA !== null && slotA !== '8') || moved) {
+      return { ...unsyncable(cards, 'saves.dolphin'), states }
+    }
+    const key = gameCubeKey(ctx)
+    if (!key) return { ...unsyncable(cards, 'saves.noSaveTarget'), states }
+    const region = DOLPHIN_REGION_LINKS[dolphinRegion(key)]
+    return { saves: unit(joinPath(cards, region, 'Card A'), gameCubeUnit(key, ctx.env)), states }
+  },
   primehack: (ctx) => ({
     saves: at(under(savesRoot(ctx), ctx.system, 'primehack'), shared),
     states: at(under(statesRoot(ctx), 'primehack'), (dir) => perRom(dir)),
@@ -97,15 +220,20 @@ export const RETRODECK_COMPONENTS: Readonly<Record<string, ComponentSaves>> = {
   }),
 
   /**
-   * PPSSPP keeps one directory per game *id*, read out of the ISO's PARAM.SFO
-   * rather than from the file name, and its states are named after that id too.
-   * Neither can be tied to a ROM from outside the emulator.
+   * PPSSPP keeps one directory per save, named after the game *id* read out of
+   * the ISO's PARAM.SFO — RetroDECK links its `PSP/SAVEDATA` to
+   * `saves/PSP/PPSSPP-SA` — so a game's saves are the folders starting with the
+   * disc id RomM read. Its states are named after that id too, with nothing a
+   * ROM can be matched on, and stay unsynced.
    */
-  ppsspp: (ctx) => ({
-    saves: at(under(savesRoot(ctx), 'PSP', 'PPSSPP-SA'), shared),
-    states: at(under(statesRoot(ctx), 'PSP', 'PPSSPP-SA'), shared),
-    unsyncableReason: 'saves.ppsspp'
-  }),
+  ppsspp: (ctx) => {
+    const states = at(under(statesRoot(ctx), 'PSP', 'PPSSPP-SA'), shared)
+    const savedata = under(savesRoot(ctx), 'PSP', 'PPSSPP-SA')
+    const key = saveKey(ctx)
+    const rule = key ? pspUnit(key, ctx.env) : null
+    if (!savedata || !rule) return { ...unsyncable(savedata, 'saves.ppsspp'), states }
+    return { saves: unit(savedata, rule), states }
+  },
   rpcs3: (ctx) => ({
     saves: at(under(savesRoot(ctx), ctx.system, 'rpcs3'), shared),
     states: at(under(statesRoot(ctx), ctx.system, 'rpcs3'), shared),
@@ -444,11 +572,35 @@ export function retroDeckSavePaths(ctx: SaveContext): SavePaths {
    * that is searched and never written.
    */
   const named = coreForCommand(ctx, commandLabel(ctx))
-  return {
+  const paths: SavePaths = {
     ...libretroSavePaths(ctx, config, named ?? coreForSystem(ctx.system), {
       saves: ctx.paths.saves,
       states: ctx.paths.states
     }),
     emulator: named ?? LIBRETRO_TAG
   }
+  return named ? { ...paths, ...coreUnit(ctx, named, paths.saves) } : paths
+}
+
+/**
+ * The cores that file a game's saves in a folder every game shares, keyed by
+ * something only the disc knows.
+ *
+ * Flycast with per-game VMUs writes `<product>.A1.bin` into the core's save
+ * folder; PPSSPP keeps a memory stick there, `PSP/SAVEDATA` and one folder per
+ * save. Both are the standalone's formats, so the same rules and the same tag
+ * serve either way of running them. Without a key the core's ordinary layout
+ * stands, with the reason nothing in it is this game's.
+ */
+function coreUnit(
+  ctx: SaveContext,
+  core: string,
+  saves: SaveLocation | null
+): Pick<SavePaths, 'saves' | 'unsyncableReason'> | null {
+  if (!saves || (core !== 'flycast' && core !== 'ppsspp')) return null
+  const key = saveKey(ctx)
+  const rule = key ? (core === 'flycast' ? dreamcastUnit(key) : pspUnit(key, ctx.env)) : null
+  if (!rule) return { saves, unsyncableReason: 'saves.noSaveTarget' }
+  const dir = core === 'flycast' ? saves.dir : joinPath(saves.dir, 'PSP', 'SAVEDATA')
+  return { saves: unit(dir, rule) }
 }

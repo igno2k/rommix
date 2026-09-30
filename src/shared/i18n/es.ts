@@ -594,10 +594,14 @@ export const es: Catalog = {
   'saves.noAskAgain': 'Las partidas se enviarán sin preguntar',
   'saves.deleted': '{file} borrado {where}',
   // -- lo que un emulador concreto no puede sincronizar, y lo que le falta ----
-  'saves.retrodeckPcsx2':
-    'RetroDECK da a PCSX2 una sola tarjeta de memoria compartida por todos los juegos de PS2, así que no hay ninguna partida guardada que pertenezca a este. Los estados guardados sí se sincronizan.',
   'saves.retrodeckDuckstation':
     'RetroDECK da a DuckStation una sola tarjeta de memoria compartida por todos los juegos de PS1, así que no hay ninguna partida guardada que pertenezca a este. Los estados guardados sí se sincronizan.',
+  'saves.noSaveTarget':
+    'RomM no ha leído el identificador de guardado de este juego: el número de serie o de disco con el que se archivan sus partidas en la tarjeta de memoria compartida. Vuelve a escanear la plataforma con RomM 5.3 o posterior y sincroniza de nuevo.',
+  'saves.pcsx2NoCard':
+    'La tarjeta de memoria de PCSX2 en la ranura 1 no es una tarjeta de carpeta, así que las partidas de este juego no se pueden separar de las de los demás. Conviértela en tarjeta de carpeta en los ajustes de tarjetas de memoria de PCSX2. Los estados guardados sí se sincronizan.',
+  'saves.pcsx2CardAmbiguous':
+    'PCSX2 tiene más de una tarjeta de memoria de carpeta y RomMix no puede saber cuál está en la ranura 1. Los estados guardados sí se sincronizan.',
   'saves.pcsx2':
     'PCSX2 mantiene una sola tarjeta de memoria compartida por todos los juegos de PS2, así que no hay ninguna partida guardada que pertenezca a este. Los estados guardados sí se sincronizan.',
   'saves.dolphin':

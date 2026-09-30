@@ -288,7 +288,9 @@ export class SaveSync {
 
   private locationFor(paths: SavePaths, kind: 'save' | 'state'): SaveLocation | null {
     const location = kind === 'save' ? paths.saves : paths.states
-    return location && location.match !== 'shared' ? location : null
+    // A unit is resolved but not yet moved: until the sync reads a unit as the
+    // entries it owns, the folder around them is everyone's.
+    return location && location.match !== 'shared' && location.match !== 'unit' ? location : null
   }
 
   /**

@@ -601,10 +601,14 @@ export const fr: Catalog = {
   'saves.noAskAgain': 'Les sauvegardes seront envoyées sans demander',
   'saves.deleted': '{file} supprimé {where}',
   // -- ce qu'un émulateur donné ne peut pas synchroniser, et ce qu'il attend --
-  'saves.retrodeckPcsx2':
-    "RetroDECK donne à PCSX2 une seule carte mémoire partagée par tous les jeux PS2 : aucune sauvegarde n'appartient donc à celui-ci. Les états de sauvegarde sont synchronisés.",
   'saves.retrodeckDuckstation':
     "RetroDECK donne à DuckStation une seule carte mémoire partagée par tous les jeux PS1 : aucune sauvegarde n'appartient donc à celui-ci. Les états de sauvegarde sont synchronisés.",
+  'saves.noSaveTarget':
+    "RomM n'a pas lu l'identifiant de sauvegarde de ce jeu — le numéro de série ou l'identifiant de disque sous lequel ses sauvegardes sont rangées sur la carte mémoire partagée. Relancez l'analyse de la plateforme avec RomM 5.3 ou plus récent, puis synchronisez à nouveau.",
+  'saves.pcsx2NoCard':
+    "La carte mémoire de PCSX2 dans l'emplacement 1 n'est pas une carte dossier : les sauvegardes de ce jeu ne peuvent pas être distinguées de celles des autres jeux. Convertissez-la en carte dossier dans les réglages de cartes mémoire de PCSX2. Les états de sauvegarde sont synchronisés.",
+  'saves.pcsx2CardAmbiguous':
+    "PCSX2 a plusieurs cartes mémoire dossier et RomMix ne peut pas savoir laquelle est dans l'emplacement 1. Les états de sauvegarde sont synchronisés.",
   'saves.pcsx2':
     "PCSX2 garde une seule carte mémoire partagée par tous les jeux PS2 : aucune sauvegarde n'appartient donc à celui-ci. Les états de sauvegarde sont synchronisés.",
   'saves.dolphin':

@@ -602,10 +602,14 @@ export const en = {
   // key and `localize` resolves it. Held here rather than beside them so that
   // one phrase serves every frontend that ships the same component: RetroDECK
   // and EmuDeck both run Dolphin, and both said so in their own words before.
-  'saves.retrodeckPcsx2':
-    'RetroDECK gives PCSX2 one memory card shared by every PS2 game, so there is no save file that belongs to this one. Save states are synced.',
   'saves.retrodeckDuckstation':
     'RetroDECK gives DuckStation one memory card shared by every PS1 game, so there is no save file that belongs to this one. Save states are synced.',
+  'saves.noSaveTarget':
+    "RomM has not read this game's save id — the serial or disc id its saves are filed under on the shared memory card. Rescan the platform on RomM 5.3 or later, then sync again.",
+  'saves.pcsx2NoCard':
+    "PCSX2's memory card in slot 1 is not a folder card, so this game's saves cannot be told apart from the other games' on it. Convert it to a folder card in PCSX2's memory card settings. Save states are synced.",
+  'saves.pcsx2CardAmbiguous':
+    'PCSX2 has more than one folder memory card and RomMix cannot tell which one is in slot 1. Save states are synced.',
   'saves.pcsx2':
     'PCSX2 keeps one memory card shared by every PS2 game, so there is no save file that belongs to this one. Save states are synced.',
   'saves.dolphin':
