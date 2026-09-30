@@ -200,10 +200,32 @@ describe('the rules, against RetroDECK as it ships', () => {
     assert.equal(evaluateSaveSetupRule(rule('esde.component.psx'), list, context()).status, 'ok')
   })
 
-  test('psx is SwanStation, and every label is ES-DE’s own spelling', () => {
+  test('every label is the command RetroDECK itself runs first, psx on SwanStation', () => {
+    // The system list RetroDECK 0.10.9b bundles, cut to the systems here.
+    const xml = readFileSync(new URL('es_systems.xml', FIXTURES), 'utf8')
+    const first = (system: string): string | null => {
+      for (const [, block] of xml.matchAll(/<system>([\s\S]*?)<\/system>/g)) {
+        if (/<name>\s*([\s\S]*?)\s*<\/name>/.exec(block)?.[1] !== system) continue
+        return /<command\s+label="([^"]*)"/.exec(block)?.[1] ?? null
+      }
+      return null
+    }
+    for (const [system, label] of Object.entries(RETRODECK_SYSTEM_LABELS)) {
+      assert.equal(label, first(system), system)
+    }
     assert.equal(RETRODECK_SYSTEM_LABELS.psx, 'SwanStation')
-    assert.equal(RETRODECK_SYSTEM_LABELS.ps2, 'PCSX2 (Standalone)')
-    assert.equal(RETRODECK_SYSTEM_LABELS.gc, 'Dolphin (Standalone)')
+    // Mesen is RetroDECK's choice for nes and saves the same `.srm`: not a row.
+    assert.equal(first('nes'), 'Mesen')
+    assert.equal(RETRODECK_SYSTEM_LABELS.nes, undefined)
+  })
+
+  test('a DuckStation card type is reported, never changed', () => {
+    const ini = '[MemoryCards]\nCard1Type = Shared\n'
+    assert.equal(
+      evaluateSaveSetupRule(rule('duckstation.perGameCard'), ini, context()).status,
+      'report-only'
+    )
+    assert.equal(applySaveSetupRule(rule('duckstation.perGameCard'), ini), null)
   })
 
   test('every rule explains itself in words', () => {

@@ -77,17 +77,20 @@ export interface SaveSetupContext {
 }
 
 /**
- * The command every system that matters runs with, by ES-DE's own label.
+ * The command each system whose save shape depends on it runs with, by ES-DE's
+ * own label.
  *
- * The owner's choice, and the one bazzite-maint tunes for: one core per system,
- * so a save written on one device is read by the same program on the other.
- * Labels are ES-DE's exact strings — a label ES-DE does not list is ignored by
- * it — checked against the `es_systems.xml` ES-DE ships.
+ * Two rules decide what is here. A row is only for a system where the choice
+ * of emulator changes where a save lands or what format it is in — a memory
+ * card against a per-title card, a standalone's tree against a core's folder,
+ * `.dsv` against `.sav`. And every label is the command RetroDECK itself runs
+ * first for that system, from the `es_systems.xml` it bundles: the check keeps
+ * a device on RetroDECK's default, and never pushes it onto a core RetroDECK
+ * did not choose. A label ES-DE does not list would be ignored by it anyway.
  */
 export const RETRODECK_SYSTEM_LABELS: Readonly<Record<string, string>> = {
   psx: 'SwanStation',
   gba: 'mGBA',
-  nes: 'Nestopia UE',
   snes: 'Snes9x - Current',
   n64: 'Mupen64Plus-Next',
   megadrive: 'Genesis Plus GX',
@@ -217,7 +220,9 @@ export const SAVE_SETUP_RULES: readonly SaveSetupRule[] = [
     section: 'MemoryCards',
     key: 'Card1Type',
     wanted: 'PerGameTitle',
-    fix: 'edit',
+    // Reported, never set: switching card type moves every PS1 game's saves
+    // at once, which is a migration for a person to run, like the PS2 card.
+    fix: 'report-only',
     reason: 'saveSetup.duckstationPerGameCard'
   },
   ...Object.entries(RETRODECK_SYSTEM_LABELS).flatMap(([system, label]): SaveSetupRule[] => [

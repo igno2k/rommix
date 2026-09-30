@@ -223,8 +223,9 @@ describe('a fix', () => {
 
   test('does not create an emulator’s config the emulator has not written', async () => {
     const { setup, config } = rig()
-    await assert.rejects(setup.fix('duckstation.perGameCard'), /not there yet/)
-    assert.equal(existsSync(join(config, 'duckstation/settings.ini')), false)
+    rmSync(join(config, 'dolphin-emu/Dolphin.ini'))
+    await assert.rejects(setup.fix('dolphin.gciFolder'), /not there yet/)
+    assert.equal(existsSync(join(config, 'dolphin-emu/Dolphin.ini')), false)
   })
 
   test('creates the ES-DE gamelist a system without games has not got yet', async () => {

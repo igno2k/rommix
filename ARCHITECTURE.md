@@ -114,7 +114,12 @@ game or anything in RetroDECK's sandbox runs, through a link, and into a config
 file the emulator has not written yet. The file is copied into
 `<RomMix>/config/emulator-backups/` first, then one line is edited and the file
 renamed into place. A value that is already right writes nothing. A raw PS2
-card, a moved GCI folder and a per-game override are reported, never changed.
+card, DuckStation's card type, a moved GCI folder and a per-game override are
+reported, never changed: each moves saves, which is a person's migration to
+run. The ES-DE rows only exist for systems whose save shape depends on the
+emulator, and each names RetroDECK's own first command
+(`retrodeck/fixtures/es_systems.xml`), so the check never moves a system off
+RetroDECK's default.
 
 ## Assumed, not verified on a device
 
@@ -122,6 +127,4 @@ card, a moved GCI folder and a per-game override are reported, never changed.
 - The PPSSPP libretro core keeps its memory stick in the core's save folder
   (`saves/psp/PSP/SAVEDATA` under RetroDECK). The standalone's
   `saves/PSP/PPSSPP-SA` is taken from RetroDECK's `component_prepare.sh`.
-- The RetroDECK psx label in ES-DE is `SwanStation`. gb and gbc are not set,
-  because ES-DE lists no `mGBA` command for them.
 - The fork's release assets carry the GitHub `digest` the updater requires.
