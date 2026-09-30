@@ -4,6 +4,16 @@ Newest first. `npm run release` adds the entry for a version, falling back to th
 commit subjects and ids since the previous tag — so write the section by hand
 before releasing if you want prose instead. See [Releasing](README.md#releasing).
 
+## 0.20.1 (igno2k/rommix fork) — 2026-09-30
+
+Fork of leclercb/rommix 0.20.0 (igno2k/claude#284). Updates come from igno2k/rommix.
+
+- feat: sync each game's saves on a shared card through RomM, in the formats RomM's reference client Argosy uses: PCSX2 folder memory card (the game's folders, zipped), Dolphin GCI folder (the game's `.gci` files), PPSSPP SAVEDATA (the game's disc-id folders), Flycast per-content VMU (`<product>.A1.bin`); keyed by RomM 5.3's `save_target`, slot `autosave`
+- feat: a pull replaces only that game's entries, all or nothing, with backups, and is refused while the emulator runs; other games on the card stay byte-identical
+- feat: the pre-flight screen checks the emulator settings saves depend on and offers a confirmed, backed-up fix (never a non-default core; card migrations are report-only); the result is written to `config/save-setup.json`
+- feat: updates come from the repository named in package.json (igno2k/rommix)
+- docs: ARCHITECTURE.md
+
 ## 0.20.0 — 2026-09-30
 
 - fix: stop the achievements tab blanking the screen (a8e90b1)
