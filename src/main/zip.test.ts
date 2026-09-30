@@ -1,10 +1,19 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { extractZip, isZip, zipDirectory } from './zip.ts'
+import { PS2_CARD, PS2_OWNED, type FixtureTree } from '@config/emulators/units/fixtures.ts'
+import { extractZip, isZip, zipDirectory, zipMembers, zipRoots } from './zip.ts'
 
 /**
  * The zip writer, round-tripped.
@@ -281,3 +290,113 @@ test('a file too short to have a signature is not a zip', async () => {
   assert.equal(await isZip(tiny), false)
   assert.equal(await isZip(join(dir, 'not-there-at-all')), false)
 })
+
+/** Write a fixture tree under `root`, contents as latin1 bytes. */
+function plant(root: string, tree: FixtureTree): void {
+  for (const [relative, contents] of Object.entries(tree)) {
+    mkdirSync(join(root, relative, '..'), { recursive: true })
+    writeFileSync(join(root, relative), Buffer.from(contents, 'latin1'))
+  }
+}
+
+test('a game\u2019s members are the roots of the archive, and nothing else of the folder is in it', async () => {
+  const root = scratch()
+  const card = join(root, 'Mcd001.ps2')
+  plant(card, PS2_CARD)
+
+  const zipPath = join(root, 'unit.zip')
+  assert.equal(await zipMembers(card, PS2_OWNED, zipPath), 4)
+
+  // Argosy's shape: each save folder a root, the card's own name and its
+  // superblock nowhere.
+  assert.deepEqual(
+    (await zipRoots(zipPath)).sort((a, b) => (a.name < b.name ? -1 : 1)),
+    [
+      { name: 'BASLUS-20152AC04', kind: 'dir' },
+      { name: 'BASLUS-20152SYS', kind: 'dir' }
+    ]
+  )
+  const back = join(root, 'back')
+  await extractZip(zipPath, back)
+  assert.equal(
+    readFileSync(join(back, 'BASLUS-20152SYS', 'settings'), 'latin1'),
+    PS2_CARD['BASLUS-20152SYS/settings']
+  )
+})
+
+test('a file member is a root file of its own', async () => {
+  const root = scratch()
+  writeFileSync(join(root, '01-GZLE-a.gci'), 'first')
+  writeFileSync(join(root, '01-GZLE-b.gci'), 'second')
+  writeFileSync(join(root, '8P-GM4E-c.gci'), 'not asked for')
+
+  const zipPath = join(root, 'out', 'unit.zip')
+  assert.equal(await zipMembers(root, ['01-GZLE-b.gci', '01-GZLE-a.gci', 'gone.gci'], zipPath), 2)
+  assert.deepEqual(await zipRoots(zipPath), [
+    { name: '01-GZLE-a.gci', kind: 'file' },
+    { name: '01-GZLE-b.gci', kind: 'file' }
+  ])
+})
+
+test('the same files make the same bytes, whenever and in whatever order they were listed', async () => {
+  // RomM files a slot upload by its md5, so two devices pushing one unchanged
+  // save must send one archive.
+  const one = scratch()
+  const other = scratch()
+  plant(join(one, 'card'), PS2_CARD)
+  plant(join(other, 'card'), PS2_CARD)
+  const later = new Date('2030-01-01T00:00:00Z')
+  utimesSync(join(other, 'card', 'BASLUS-20152SYS', 'settings'), later, later)
+
+  await zipMembers(join(one, 'card'), PS2_OWNED, join(one, 'a.zip'))
+  await zipMembers(join(other, 'card'), PS2_OWNED.toReversed(), join(other, 'b.zip'))
+
+  assert.deepEqual(readFileSync(join(one, 'a.zip')), readFileSync(join(other, 'b.zip')))
+})
+
+test('no member left to archive writes nothing', async () => {
+  const root = scratch()
+  mkdirSync(join(root, 'EMPTYDIR'))
+  assert.equal(await zipMembers(root, ['EMPTYDIR', 'missing'], join(root, 'none.zip')), 0)
+})
+
+test('the roots of an archive another client wrote are read the same way', async () => {
+  const root = scratch()
+  const source = join(root, 'src')
+  plant(source, {
+    'CARD/BASLUS-20152AC04/icon.sys': 'x',
+    'CARD/_pcsx2_superblock': 'y',
+    'loose.bin': 'z'
+  })
+  const zipPath = join(root, 'legacy.zip')
+  await zipDirectory(source, zipPath)
+
+  assert.deepEqual(await zipRoots(zipPath), [
+    { name: 'CARD', kind: 'dir' },
+    { name: 'loose.bin', kind: 'file' }
+  ])
+})
+
+test('an archive that cannot be read has no roots to offer, and says so', async () => {
+  const root = scratch()
+  writeFileSync(join(root, 'bad.zip'), 'not a zip')
+  await assert.rejects(zipRoots(join(root, 'bad.zip')))
+})
+
+test(
+  'the members archive opens in a different implementation too',
+  { skip: !haveUnzip() },
+  async () => {
+    const root = scratch()
+    plant(join(root, 'card'), PS2_CARD)
+    const zipPath = join(root, 'unit.zip')
+    await zipMembers(join(root, 'card'), PS2_OWNED, zipPath)
+    const listing = execFileSync('unzip', ['-Z1', zipPath], { encoding: 'utf8' }).trim().split('\n')
+    assert.deepEqual(listing, [
+      'BASLUS-20152AC04/BASLUS-20152AC04',
+      'BASLUS-20152AC04/icon.sys',
+      'BASLUS-20152SYS/icon.sys',
+      'BASLUS-20152SYS/settings'
+    ])
+  }
+)

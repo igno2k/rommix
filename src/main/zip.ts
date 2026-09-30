@@ -73,6 +73,46 @@ export async function isZip(path: string): Promise<boolean> {
   }
 }
 
+/** One top-level entry of an archive: a file at the root, or a folder holding others. */
+export interface ZipRoot {
+  name: string
+  kind: 'file' | 'dir'
+}
+
+/**
+ * The roots of an archive, read from its central directory without extracting
+ * anything.
+ *
+ * What a pull of one game's entries is judged by before a byte is written: an
+ * archive whose every root is the game's own is unpacked, and one carrying
+ * anything else is refused whole. Names are separated the way `entryTarget`
+ * separates them, so the roots named here are the ones extraction would write.
+ */
+export async function zipRoots(zipPath: string): Promise<ZipRoot[]> {
+  const roots = new Map<string, 'file' | 'dir'>()
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    yauzl.open(zipPath, { lazyEntries: true, autoClose: true }, (err, zipfile) => {
+      if (err || !zipfile) return rejectPromise(err ?? new Error(t('error.cannotOpenArchive')))
+      zipfile.on('error', (cause) => {
+        zipfile.close()
+        rejectPromise(cause)
+      })
+      zipfile.on('end', () => resolvePromise())
+      zipfile.on('entry', (entry: yauzl.Entry) => {
+        const [first, ...rest] = entry.fileName.replace(/\\/g, '/').replace(/^\/+/, '').split('/')
+        if (first) {
+          const kind = rest.length > 0 ? 'dir' : 'file'
+          // A folder is a folder however its first entry was listed.
+          if (roots.get(first) !== 'dir') roots.set(first, kind)
+        }
+        zipfile.readEntry()
+      })
+      zipfile.readEntry()
+    })
+  })
+  return [...roots].map(([name, kind]) => ({ name, kind }))
+}
+
 /**
  * Extract a zip archive into `destDir`, creating directories as needed.
  *
@@ -226,7 +266,51 @@ async function entryNamesUnder(dir: string, prefix = '', seen?: Set<string>): Pr
  * a missing one.
  */
 export async function zipDirectory(dir: string, zipPath: string): Promise<number> {
-  const names = await entryNamesUnder(dir)
+  return writeZip(dir, await entryNamesUnder(dir), zipPath)
+}
+
+/**
+ * Archive some of the entries directly inside `dir`, each one a root of the
+ * archive — a folder with everything under it, or a file as it is.
+ *
+ * The shape Argosy uploads one game's part of a shared save folder in: the
+ * PS2 save folders of one game off a folder card, one game's `.gci` files. The
+ * folder they were taken from is not a level, because another device's card
+ * is called something else and has other games beside them.
+ *
+ * Returns the number of files written; zero writes nothing.
+ */
+export async function zipMembers(
+  dir: string,
+  members: readonly string[],
+  zipPath: string
+): Promise<number> {
+  const names: string[] = []
+  for (const member of members) {
+    const path = join(dir, member)
+    const info = await stat(path).catch(() => null)
+    if (!info) continue
+    if (info.isDirectory()) names.push(...(await entryNamesUnder(path, member)))
+    else names.push(member)
+  }
+  return writeZip(dir, names, zipPath)
+}
+
+/**
+ * Write the files `names`, relative to `dir`, into one archive.
+ *
+ * In code-unit order and with every timestamp zero, so the same files make the
+ * same bytes on every device and at every upload: RomM files a slot upload by
+ * the md5 of what arrives, and two devices pushing one unchanged save would
+ * otherwise send two different archives of it. The order is compared as code
+ * units rather than collated, which is the machine's setting.
+ */
+async function writeZip(
+  dir: string,
+  unsorted: readonly string[],
+  zipPath: string
+): Promise<number> {
+  const names = [...unsorted].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
   if (names.length === 0) return 0
 
   /**
