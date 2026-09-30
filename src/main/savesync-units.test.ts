@@ -32,7 +32,7 @@ import type { RommRom, RommSave } from '@shared/types'
 import type { RommClient } from './romm/index.ts'
 import { SaveSync, type SaveTarget } from './saves.ts'
 import { Store } from './store.ts'
-import { zipContentHash, zipDirectory, zipRoots } from './zip.ts'
+import { extractZip, zipContentHash, zipDirectory, zipRoots } from './zip.ts'
 
 /**
  * Save sync through RetroDECK's shared cards, end to end against a fake RomM.
@@ -467,6 +467,47 @@ describe('Dolphin GCI folder', () => {
       readFileSync(join(cardA, '01-GZLE-gczelda2.gci'), 'latin1'),
       remote['01-GZLE-gczelda2.gci']
     )
+  })
+})
+
+describe('Dolphin GCI folder, a save named by hand', () => {
+  test('what one device pushes under a name of its own, another pulls', async () => {
+    const card: FixtureTree = {
+      ...GCI_FOLDER,
+      'zelda.gci': gci('GZLE01', 'zelda', 'named by hand')
+    }
+    const one = retroDeck({ system: 'gc', romFile: 'Zelda.iso', romBytes: gameCubeIso('GZLE01') })
+    const first = join(one.saves, 'gc', 'dolphin', 'US', 'Card A')
+    plant(first, card)
+    await one.sync.pushNow(one.target)
+    const sent = one.uploaded[0]
+    assert.deepEqual(await rootsOf(sent.bytes), [...GC_OWNED, 'zelda.gci'].sort())
+
+    // The other device has the game's first save only, and another game's.
+    const upload = join(scratch(), 'sent.zip')
+    writeFileSync(upload, sent.bytes)
+    const unpacked = join(scratch(), 'unpacked')
+    await extractZip(upload, unpacked)
+    const remote: FixtureTree = Object.fromEntries(
+      readdirSync(unpacked).map((name) => [name, readFileSync(join(unpacked, name), 'latin1')])
+    )
+    const two = retroDeck({
+      system: 'gc',
+      romFile: 'Zelda.iso',
+      romBytes: gameCubeIso('GZLE01'),
+      saves: [remoteSave({ emulator: 'dolphin', updated_at: '2026-09-03T08:00:00.000Z' })],
+      remote
+    })
+    const second = join(two.saves, 'gc', 'dolphin', 'US', 'Card A')
+    plant(second, GCI_FOLDER)
+    age(second)
+    const others = hashes(second, [...GC_OWNED, 'zelda.gci'])
+
+    const pulled = await two.sync.pullNow(two.target)
+
+    assert.deepEqual([pulled.saves, pulled.failed], [1, 0])
+    assert.equal(readFileSync(join(second, 'zelda.gci'), 'latin1'), card['zelda.gci'])
+    assert.deepEqual(hashes(second, [...GC_OWNED, 'zelda.gci']), others)
   })
 })
 

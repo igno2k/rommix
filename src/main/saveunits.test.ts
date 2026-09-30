@@ -477,8 +477,9 @@ describe('pulling a game’s entries', () => {
       restoreUnit({
         dir,
         unit: gameCubeUnit(GC_KEY, env),
-        // The right header under a name that is nobody's: refused on the name.
-        archive: await remoteArchive({ 'save.gci': gci('GZLE01', 'x', 'y') }),
+        // The right header under a name that names another game: refused on
+        // the name, before the header is ever read.
+        archive: await remoteArchive({ '8P-GM4E-x.gci': gci('GZLE01', 'x', 'y') }),
         backups: join(root, 'backups'),
         remoteTime: REMOTE_TIME,
         romId: 7,
@@ -492,6 +493,46 @@ describe('pulling a game’s entries', () => {
     assert.equal(moved, 0)
     assert.deepEqual(hashes(dir), before)
     assert.deepEqual(readdirSync(root), ['Card A'])
+  })
+
+  test('a GCI named by hand is judged by its header once unpacked, both ways', async () => {
+    const root = scratch()
+    const dir = join(root, 'Card A')
+    plant(dir, GCI_FOLDER)
+    const others = hashes(dir)
+
+    // The game's own save under a name that says nothing: taken.
+    const wrote = await restoreUnit({
+      dir,
+      unit: gameCubeUnit(GC_KEY, env),
+      archive: await remoteArchive({
+        ...ARCHIVE_CASES[1].remote,
+        'zelda.gci': gci('GZLE01', 'zelda', 'named by hand')
+      }),
+      backups: join(root, 'backups'),
+      remoteTime: REMOTE_TIME,
+      romId: 7
+    })
+    assert.ok(wrote.includes('zelda.gci'))
+
+    // Another game's save under a name that says nothing: refused on the header.
+    const after = hashes(dir)
+    await assert.rejects(
+      restoreUnit({
+        dir,
+        unit: gameCubeUnit(GC_KEY, env),
+        archive: await remoteArchive({ 'kart.gci': gci('GM4E8P', 'kart', 'x') }),
+        backups: join(root, 'backups'),
+        remoteTime: REMOTE_TIME,
+        romId: 7
+      }),
+      /not this game/
+    )
+    assert.deepEqual(hashes(dir), after)
+    assert.equal(
+      hashes(dir)['8P-GM4E-MarioKart Double Dash!!.gci'],
+      others['8P-GM4E-MarioKart Double Dash!!.gci']
+    )
   })
 
   test('copies rotate per member rather than piling up', async () => {

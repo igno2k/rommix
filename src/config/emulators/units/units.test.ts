@@ -170,6 +170,16 @@ describe('what a game owns', () => {
     assert.equal(unit.owns('01-GZLE-gczelda2.gci', 'dir', ROOT), false)
   })
 
+  test('GameCube: by name alone, only a name that names another game is ruled out', () => {
+    const unit = gameCubeUnit(GC_KEY, env({}))
+    assert.equal(unit.mayOwn?.('zelda.gci', 'file'), true)
+    assert.equal(unit.mayOwn?.('01-GZLE-gczelda2.gci', 'file'), true)
+    assert.equal(unit.mayOwn?.('8P-GM4E-kart.gci', 'file'), false)
+    assert.equal(unit.mayOwn?.('zelda.sav', 'file'), false)
+    assert.equal(unit.mayOwn?.('zelda.deleted.gci', 'file'), false)
+    assert.equal(unit.mayOwn?.('Card A', 'dir'), false)
+  })
+
   test('GameCube: a four-character key matches the game code of any maker', () => {
     const unit = gameCubeUnit('gzle', env(GCI_FOLDER))
     assert.deepEqual(claimed(unit, GCI_FOLDER), [...GC_OWNED].sort())

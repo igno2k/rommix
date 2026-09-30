@@ -36,6 +36,10 @@ export function dolphinRegion(gameId: string): 'USA' | 'EUR' | 'JAP' {
 
 export function gameCubeUnit(key: string, env: SaveEnvironment): SaveUnit {
   const wanted = key.toUpperCase()
+  // A four-character key is a game code without its maker, which is what a
+  // server that knows the game but not the pressing sends.
+  const matches = (id: string): boolean =>
+    wanted.length === 4 ? id.startsWith(wanted) : id === wanted
   return {
     key: wanted,
     carriedAs: 'archive',
@@ -44,9 +48,16 @@ export function gameCubeUnit(key: string, env: SaveEnvironment): SaveUnit {
       const lower = name.toLowerCase()
       if (!lower.endsWith('.gci') || lower.includes('.deleted')) return false
       const id = gciGameId(env.head(joinPath(dir, name), GCI_HEAD_BYTES)) ?? gciNameGameId(name)
-      // A four-character key is a game code without its maker, which is what a
-      // server that knows the game but not the pressing sends.
-      return id !== null && (wanted.length === 4 ? id.startsWith(wanted) : id === wanted)
+      return id !== null && matches(id)
+    },
+    // A name without Dolphin's `<maker>-<code>-` says nothing, and the header
+    // decides once the file can be read; a name that has one must agree.
+    mayOwn: (name, kind) => {
+      if (kind !== 'file') return false
+      const lower = name.toLowerCase()
+      if (!lower.endsWith('.gci') || lower.includes('.deleted')) return false
+      const id = gciNameGameId(name)
+      return id === null || matches(id)
     }
   }
 }

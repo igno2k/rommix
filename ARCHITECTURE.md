@@ -81,9 +81,10 @@ PSP (`SaveUnit.alsoAccepts`).
    content hash, or its byte md5 or length, before anything else happens.
 4. Its roots are read from the archive's directory before it is unpacked. A
    root the rule keeps its hands off (`_pcsx2_superblock`) refuses the whole
-   archive, and so does any root the rule does not claim by its name alone —
-   a GCI by its Dolphin-style `<maker>-<code>-` name, a PSP folder by its
-   prefix. The one shape let past is a single folder, which may be a whole
+   archive, and so does any root whose name rules it out (`SaveUnit.mayOwn`):
+   a PSP folder without the disc-id prefix, a non-`.gci` file, or a GCI whose
+   Dolphin-style `<maker>-<code>-` name names another game. A GCI whose name
+   says nothing, such as `zelda.gci`, goes on to the header check. The one shape let past is a single folder, which may be a whole
    card another client zipped. An archive that declares more than
    `SAVE_ARCHIVE_MAX_BYTES` unpacked is refused as well.
 5. It is unpacked beside the shared folder, on the same filesystem, never

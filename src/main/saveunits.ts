@@ -158,9 +158,10 @@ async function backedUp(path: string, backups: string, kind: 'file' | 'dir'): Pr
  * Is an archive worth unpacking at all, by the names of its roots alone?
  *
  * The first of two looks, taken before a byte is written: a root the rule
- * keeps its hands off refuses the archive outright, and so does any root the
- * rule does not claim by its name — asked with nothing on the disk to read, so
- * a GCI is judged by its Dolphin-style name and a PSP folder by its prefix.
+ * keeps its hands off refuses the archive outright, and so does any root whose
+ * name rules it out (`SaveUnit.mayOwn`) — a PSP folder without the prefix, a
+ * GCI whose Dolphin-style name names another game. A name that says nothing
+ * either way, a GCI called `zelda.gci`, passes to the header check.
  * One shape is let through to the second look: a single folder that is not
  * the game's by name, which may be a whole card another client zipped. What is
  * inside it, and what every root really holds, is judged once it is unpacked
@@ -170,7 +171,9 @@ async function plausibleRoots(unit: SaveUnit, archive: string, nowhere: string):
   const roots = await zipRoots(archive)
   if (roots.length === 0) return false
   if (roots.some((root) => !claimable(unit, root.name))) return false
-  if (roots.every((root) => unit.owns(root.name, root.kind, nowhere))) return true
+  const byName = (root: { name: string; kind: 'file' | 'dir' }): boolean =>
+    unit.mayOwn ? unit.mayOwn(root.name, root.kind) : unit.owns(root.name, root.kind, nowhere)
+  if (roots.every(byName)) return true
   return roots.length === 1 && roots[0].kind === 'dir'
 }
 

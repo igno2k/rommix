@@ -75,6 +75,14 @@ export interface SaveUnit {
    */
   owns(name: string, kind: 'file' | 'dir', dir: string): boolean
   /**
+   * Could this entry be the game's, judged by its name alone — before an
+   * archive is unpacked, with nothing to read? False only where the name rules
+   * it out; a name that says nothing either way is left for `owns` to judge
+   * once there is something to read. Absent means `owns` already decides by
+   * name.
+   */
+  mayOwn?(name: string, kind: 'file' | 'dir'): boolean
+  /**
    * The name a pull writes a `file` unit under when this device has none yet —
    * the name the emulator will open.
    */
