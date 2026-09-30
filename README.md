@@ -6,9 +6,9 @@
 
 **A Big Picture–style front end for your own [RomM](https://romm.app) server.**
 
-[![Build and tests](https://img.shields.io/github/actions/workflow/status/leclercb/rommix/release.yml?branch=main&label=build%20%26%20tests&style=flat-square&labelColor=0b0d13&color=2aa9e0)](https://github.com/leclercb/rommix/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/github/v/release/leclercb/rommix?style=flat-square&labelColor=0b0d13&color=2aa9e0)](https://github.com/leclercb/rommix/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/leclercb/rommix/total?style=flat-square&labelColor=0b0d13&color=2aa9e0)](https://github.com/leclercb/rommix/releases)
+[![Build and tests](https://img.shields.io/github/actions/workflow/status/igno2k/rommix/release.yml?branch=main&label=build%20%26%20tests&style=flat-square&labelColor=0b0d13&color=2aa9e0)](https://github.com/igno2k/rommix/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/igno2k/rommix?style=flat-square&labelColor=0b0d13&color=2aa9e0)](https://github.com/igno2k/rommix/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/igno2k/rommix/total?style=flat-square&labelColor=0b0d13&color=2aa9e0)](https://github.com/igno2k/rommix/releases)
 [![Linux](https://img.shields.io/badge/linux-x86__64%20%C2%B7%20arm64-2aa9e0?style=flat-square&labelColor=0b0d13)](#-install)
 [![Licence](https://img.shields.io/badge/licence-MIT-2aa9e0?style=flat-square&labelColor=0b0d13)](LICENSE)
 
@@ -17,9 +17,14 @@
 Browse your library like a console dashboard, download a game into your
 emulator's ROM folder, play it, and your saves go back to RomM when you quit.
 
-Website: https://leclercb.github.io/rommix/
+This is a fork of [leclercb/rommix](https://github.com/leclercb/rommix), by
+Benjamin Leclerc, that adds per-game sync for the saves emulators keep on one
+shared card — see [ARCHITECTURE.md](ARCHITECTURE.md). Releases and updates come
+from this fork; everything else is upstream's work.
 
-Demo: https://leclercb.github.io/rommix/demo/
+Website (upstream): https://leclercb.github.io/rommix/
+
+Demo (upstream): https://leclercb.github.io/rommix/demo/
 
 <div align="center">
 
@@ -101,7 +106,7 @@ Demo: https://leclercb.github.io/rommix/demo/
 ## 📥 Install
 
 Download the AppImage from
-[Releases](https://github.com/leclercb/rommix/releases) and choose `x86_64` or
+[Releases](https://github.com/igno2k/rommix/releases) and choose `x86_64` or
 `arm64` depending on your machine's architecture.
 
 ```bash
@@ -139,7 +144,7 @@ so a shortcut can name them in **Launch options** without shell syntax around
 Node 24 or newer.
 
 ```bash
-git clone https://github.com/leclercb/rommix.git
+git clone https://github.com/igno2k/rommix.git
 cd rommix
 npm install
 npm run appimage        # writes dist/RomMix-<arch>.AppImage
@@ -359,7 +364,7 @@ releases carries the same one.
 Unsetting the variable puts the updater back on the releases, but leaves you on
 the build you are running: it reports that earlier version, so nothing newer is
 found until the next release is published. Download one from the
-[releases page](https://github.com/leclercb/rommix/releases) to leave sooner.
+[releases page](https://github.com/igno2k/rommix/releases) to leave sooner.
 
 ---
 
