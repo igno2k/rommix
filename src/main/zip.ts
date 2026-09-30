@@ -82,16 +82,26 @@ export interface ZipRoot {
 }
 
 /**
- * The roots of an archive, read from its central directory without extracting
- * anything.
+ * The most a save archive may unpack to, all entries together.
  *
- * What a pull of one game's entries is judged by before a byte is written: an
- * archive whose every root is the game's own is unpacked, and one carrying
- * anything else is refused whole. Names are separated the way `entryTarget`
- * separates them, so the roots named here are the ones extraction would write.
+ * A save is small — a card's worth of folders, a VMU — and an archive that
+ * declares more than this is either not a save or built to fill the disk it
+ * is unpacked on. Refused before anything is written: see `extractZip`'s
+ * `maxBytes`. ROMs and emulators, which are large on purpose, are not held to
+ * it.
  */
-export async function zipRoots(zipPath: string): Promise<ZipRoot[]> {
-  const roots = new Map<string, 'file' | 'dir'>()
+export const SAVE_ARCHIVE_MAX_BYTES = 512 * 1024 * 1024
+
+/** One entry of an archive as its central directory lists it. */
+interface ZipListing {
+  name: string
+  /** What it declares it unpacks to, which yauzl holds the stream to. */
+  size: number
+}
+
+/** Every entry of an archive, read from its central directory without extracting anything. */
+async function zipListing(zipPath: string): Promise<ZipListing[]> {
+  const entries: ZipListing[] = []
   await new Promise<void>((resolvePromise, rejectPromise) => {
     yauzl.open(zipPath, { lazyEntries: true, autoClose: true }, (err, zipfile) => {
       if (err || !zipfile) return rejectPromise(err ?? new Error(t('error.cannotOpenArchive')))
@@ -101,18 +111,48 @@ export async function zipRoots(zipPath: string): Promise<ZipRoot[]> {
       })
       zipfile.on('end', () => resolvePromise())
       zipfile.on('entry', (entry: yauzl.Entry) => {
-        const [first, ...rest] = entry.fileName.replace(/\\/g, '/').replace(/^\/+/, '').split('/')
-        if (first) {
-          const kind = rest.length > 0 ? 'dir' : 'file'
-          // A folder is a folder however its first entry was listed.
-          if (roots.get(first) !== 'dir') roots.set(first, kind)
-        }
+        entries.push({ name: entry.fileName, size: entry.uncompressedSize })
         zipfile.readEntry()
       })
       zipfile.readEntry()
     })
   })
+  return entries
+}
+
+/**
+ * The roots of an archive, read from its central directory without extracting
+ * anything.
+ *
+ * What a pull of one game's entries is judged by before a byte is written —
+ * see `restoreUnit`. Names are separated the way `entryTarget` separates them,
+ * so the roots named here are the ones extraction would write.
+ */
+export async function zipRoots(zipPath: string): Promise<ZipRoot[]> {
+  const roots = new Map<string, 'file' | 'dir'>()
+  for (const entry of await zipListing(zipPath)) {
+    const [first, ...rest] = entry.name.replace(/\\/g, '/').replace(/^\/+/, '').split('/')
+    if (!first) continue
+    // A folder is a folder however its first entry was listed.
+    if (roots.get(first) !== 'dir') roots.set(first, rest.length > 0 ? 'dir' : 'file')
+  }
   return [...roots].map(([name, kind]) => ({ name, kind }))
+}
+
+/**
+ * Refuse an archive that declares more than `maxBytes` unpacked, before any of
+ * it is written. The declared sizes are what yauzl holds each entry's stream
+ * to, so an archive cannot declare little and deliver more.
+ */
+async function withinSize(zipPath: string, maxBytes: number): Promise<void> {
+  const total = (await zipListing(zipPath)).reduce((sum, entry) => sum + entry.size, 0)
+  if (total <= maxBytes) return
+  log.error('zip', 'refused an archive that unpacks to more than a save can be', undefined, {
+    archive: zipPath,
+    bytes: total,
+    limit: maxBytes
+  })
+  throw new Error(t('error.saveArchiveTooLarge'))
 }
 
 /**
@@ -122,7 +162,12 @@ export async function zipRoots(zipPath: string): Promise<ZipRoot[]> {
  * what came out of the archive from what was already in the folder needs that
  * list and cannot rebuild it afterwards — see `SaveSync.restoreArchive`.
  */
-export async function extractZip(zipPath: string, destDir: string): Promise<string[]> {
+export async function extractZip(
+  zipPath: string,
+  destDir: string,
+  options: { maxBytes?: number } = {}
+): Promise<string[]> {
+  if (options.maxBytes !== undefined) await withinSize(zipPath, options.maxBytes)
   const root = resolve(destDir)
   await mkdir(root, { recursive: true })
   const took = log.since()
@@ -327,6 +372,7 @@ function combinedHash(entries: readonly { name: string; md5: string }[]): string
 
 /** RomM's content hash of the archive at `zipPath`. See `combinedHash`. */
 export async function zipContentHash(zipPath: string): Promise<string> {
+  await withinSize(zipPath, SAVE_ARCHIVE_MAX_BYTES)
   const entries: { name: string; md5: string }[] = []
   await new Promise<void>((resolvePromise, rejectPromise) => {
     yauzl.open(zipPath, { lazyEntries: true, autoClose: true }, (err, zipfile) => {

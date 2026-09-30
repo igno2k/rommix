@@ -4,7 +4,7 @@ import { joinPath } from '../savepaths.ts'
 import type { SaveEnvironment } from '../savepaths.ts'
 import type { EmulatorState } from '../types.ts'
 import { PS2_SUPERBLOCK } from '../units/ps2.ts'
-import { RETRODECK_APP_ID } from './index.ts'
+import { RETRODECK_APP_ID } from './appid.ts'
 import { retroDeckSystemLabel } from './saves.ts'
 
 /**

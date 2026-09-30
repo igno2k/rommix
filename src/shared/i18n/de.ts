@@ -1115,6 +1115,10 @@ export const de: Catalog = {
     'Von {name} kam nur ein Teil von RomM an, daher blieb die Datei unberührt.',
   'error.saveTreeTooLarge':
     'Dieser Spielstand-Ordner ist zu groß, um als ein Archiv gesendet zu werden.',
+  'error.saveArchiveTooLarge':
+    'Die Kopie auf RomM entpackt sich zu weit mehr, als ein Spielstand sein kann, daher wurde sie nicht verwendet.',
+  'error.unitBusy':
+    'Schließe zuerst {name} und jedes Spiel: Ein laufender Emulator würde die Spielstände überschreiben, die gerade ersetzt werden.',
   'error.unitRefused':
     'Die Kopie auf RomM der unter {name} abgelegten Spielstände enthält Daten, die nicht zu diesem Spiel gehören, daher blieb die gemeinsame Karte unverändert.',
   'error.unitNoBackup':

@@ -3,12 +3,13 @@ import { coreForSystem } from '../../systems.ts'
 import { iniValue } from '../ini.ts'
 import { libretroSavePaths, readLibretroConfig, LIBRETRO_TAG } from '../libretro.ts'
 import { baseName, directory, joinPath, perRom, shared, unit } from '../savepaths.ts'
-import type { SaveContext, SaveLocation, SavePaths } from '../savepaths.ts'
+import type { SaveContext, SaveLocation, SavePaths, SaveUnit } from '../savepaths.ts'
 import { dreamcastUnit } from '../units/dc.ts'
 import { dolphinRegion, gameCubeUnit } from '../units/gc.ts'
 import { gameCubeId, GAMECUBE_HEAD_BYTES } from '../units/keys.ts'
 import { ps2Unit, PS2_SUPERBLOCK } from '../units/ps2.ts'
 import { pspUnit } from '../units/psp.ts'
+import { RETRODECK_APP_ID } from './appid.ts'
 
 /**
  * Where RetroDECK's bundled emulators keep their saves.
@@ -135,6 +136,15 @@ function gameCubeKey(ctx: SaveContext): string | null {
 }
 
 /**
+ * A unit that must not be written while RetroDECK — anything in its sandbox —
+ * or the emulator itself runs. `program` is the emulator's executable as it
+ * appears on the command line.
+ */
+function guarded(rule: SaveUnit, program: string): SaveUnit {
+  return { ...rule, busyWhile: { name: 'RetroDECK', markers: [RETRODECK_APP_ID, program] } }
+}
+
+/**
  * The links RetroDECK makes from its own saves tree into Dolphin's per-region
  * card folders — `saves/gc/dolphin/US` for Dolphin's `GC/USA`, and so on — in
  * its `component_prepare.sh`.
@@ -160,7 +170,7 @@ export const RETRODECK_COMPONENTS: Readonly<Record<string, ComponentSaves>> = {
     const key = saveKey(ctx)
     const rule = key ? ps2Unit(key) : null
     if (!rule) return { ...unsyncable(memcards, 'saves.noSaveTarget'), states }
-    return { saves: unit(card.dir, rule), states }
+    return { saves: unit(card.dir, guarded(rule, 'pcsx2-qt')), states }
   },
   duckstation: cardEmulator('duckstation', 'saves.retrodeckDuckstation'),
 
@@ -190,7 +200,13 @@ export const RETRODECK_COMPONENTS: Readonly<Record<string, ComponentSaves>> = {
     const key = gameCubeKey(ctx)
     if (!key) return { ...unsyncable(cards, 'saves.noSaveTarget'), states }
     const region = DOLPHIN_REGION_LINKS[dolphinRegion(key)]
-    return { saves: unit(joinPath(cards, region, 'Card A'), gameCubeUnit(key, ctx.env)), states }
+    return {
+      saves: unit(
+        joinPath(cards, region, 'Card A'),
+        guarded(gameCubeUnit(key, ctx.env), 'dolphin-emu')
+      ),
+      states
+    }
   },
   primehack: (ctx) => ({
     saves: at(under(savesRoot(ctx), ctx.system, 'primehack'), shared),
@@ -232,7 +248,7 @@ export const RETRODECK_COMPONENTS: Readonly<Record<string, ComponentSaves>> = {
     const key = saveKey(ctx)
     const rule = key ? pspUnit(key, ctx.env) : null
     if (!savedata || !rule) return { ...unsyncable(savedata, 'saves.ppsspp'), states }
-    return { saves: unit(savedata, rule), states }
+    return { saves: unit(savedata, guarded(rule, 'PPSSPP')), states }
   },
   rpcs3: (ctx) => ({
     saves: at(under(savesRoot(ctx), ctx.system, 'rpcs3'), shared),
@@ -611,5 +627,5 @@ function coreUnit(
   const rule = key ? (core === 'flycast' ? dreamcastUnit(key) : pspUnit(key, ctx.env)) : null
   if (!rule) return { saves, unsyncableReason: 'saves.noSaveTarget' }
   const dir = core === 'flycast' ? saves.dir : joinPath(saves.dir, 'PSP', 'SAVEDATA')
-  return { saves: unit(dir, rule) }
+  return { saves: unit(dir, guarded(rule, 'retroarch')) }
 }

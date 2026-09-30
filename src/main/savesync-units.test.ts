@@ -99,6 +99,8 @@ function retroDeck(options: {
   remote?: FixtureTree
   /** What a download hands back when it is one file. */
   remoteFile?: string
+  /** The command lines of the processes running on this machine. */
+  processes?: string[]
 }): {
   sync: SaveSync
   target: SaveTarget
@@ -192,7 +194,9 @@ function retroDeck(options: {
 
   const backups = join(home, 'save-copies')
   return {
-    sync: new SaveSync(new Store(join(home, 'rommix')), client, backups),
+    sync: new SaveSync(new Store(join(home, 'rommix')), client, backups, async (marker) =>
+      (options.processes ?? []).filter((line) => line.includes(marker))
+    ),
     target: { rom, emulator, system: options.system, romPath },
     saves: join(rd, 'saves'),
     backups,
@@ -249,7 +253,7 @@ const PS2_REMOTE: FixtureTree = {
 }
 
 describe('PCSX2 folder card', () => {
-  function ps2(options: { saves?: RommSave[]; remote?: FixtureTree } = {}) {
+  function ps2(options: { saves?: RommSave[]; remote?: FixtureTree; processes?: string[] } = {}) {
     const rig = retroDeck({
       system: 'ps2',
       romFile: 'Jak and Daxter (USA).chd',
@@ -365,6 +369,37 @@ describe('PCSX2 folder card', () => {
     assert.equal(existsSync(backups), false)
     const [row] = await sync.listAssets(42, target)
     assert.equal(row.sync, 'synced')
+  })
+
+  test('nothing is written into the card while RetroDECK or PCSX2 runs, and the reason is given', async () => {
+    for (const running of [
+      '4242 bwrap --args 41 -- net.retrodeck.retrodeck',
+      '4343 /usr/bin/pcsx2-qt -fullscreen game.chd'
+    ]) {
+      const { sync, target, card } = ps2({
+        saves: [remoteSave()],
+        remote: PS2_REMOTE,
+        processes: [running]
+      })
+      const before = hashes(card)
+
+      await assert.rejects(sync.pullNow(target), /Close RetroDECK/)
+      assert.deepEqual(hashes(card), before)
+
+      // A copy only this device has, deleted here.
+      const local = ps2({ processes: [running] })
+      const kept = hashes(local.card)
+      await assert.rejects(
+        local.sync.deleteAsset(42, 'save', null, 'Jak and Daxter (USA).zip', 'local', local.target),
+        /Close RetroDECK/
+      )
+      assert.deepEqual(hashes(local.card), kept)
+    }
+  })
+
+  test('a pull with nothing to bring down is not refused for a running emulator', async () => {
+    const { sync, target } = ps2({ processes: ['1 bwrap net.retrodeck.retrodeck'] })
+    assert.equal((await sync.pullNow(target)).saves, 0)
   })
 
   test('the Saves tab lists the unit as one row, sized by its members, in the card', async () => {

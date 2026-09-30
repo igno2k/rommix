@@ -1080,6 +1080,10 @@ export const en = {
     'The download ended before the whole file arrived. It will pick up where it left off.',
   'error.saveEndedEarly': 'Only part of {name} arrived from RomM, so it was left alone.',
   'error.saveTreeTooLarge': 'This save folder is too large to send as one archive.',
+  'error.saveArchiveTooLarge':
+    'The copy on RomM unpacks to far more than a save can be, so it was left alone.',
+  'error.unitBusy':
+    'Close {name} and any game first: an emulator that is running would write over the saves being replaced.',
   'error.unitRefused':
     "The copy on RomM of the saves filed under {name} holds data that is not this game's, so the shared card was left as it was.",
   'error.unitNoBackup':

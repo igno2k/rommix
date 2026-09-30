@@ -4,7 +4,7 @@ import type { SaveUnit } from '@config/emulators'
 import { t } from './i18n.ts'
 import { log } from './log.ts'
 import { backupPath, keepBackup, stampMtime, walk } from './savefiles.ts'
-import { extractZip } from './zip.ts'
+import { extractZip, SAVE_ARCHIVE_MAX_BYTES, zipRoots } from './zip.ts'
 
 /**
  * One game's entries in a folder every game writes to: finding them, and
@@ -111,7 +111,11 @@ async function acceptedRoots(
   if (roots.some((root) => !claimable(unit, root.name))) return null
 
   const owned = roots.filter((root) => unit.owns(root.name, root.kind, staged))
-  if (owned.length === roots.length) return { from: staged, names: owned.map((root) => root.name) }
+  if (owned.length === roots.length) {
+    // In code-unit order, so the swap runs the same way on every machine.
+    const names = owned.map((root) => root.name).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    return { from: staged, names }
+  }
 
   if (roots.length === 1 && roots[0].kind === 'dir') {
     const inner = join(staged, roots[0].name)
@@ -151,6 +155,29 @@ async function backedUp(path: string, backups: string, kind: 'file' | 'dir'): Pr
 }
 
 /**
+ * Is an archive worth unpacking at all, by the names of its roots alone?
+ *
+ * The first of two looks, taken before a byte is written: a root the rule
+ * keeps its hands off refuses the archive outright, and so does any root the
+ * rule does not claim by its name — asked with nothing on the disk to read, so
+ * a GCI is judged by its Dolphin-style name and a PSP folder by its prefix.
+ * One shape is let through to the second look: a single folder that is not
+ * the game's by name, which may be a whole card another client zipped. What is
+ * inside it, and what every root really holds, is judged once it is unpacked
+ * — see `acceptedRoots`.
+ */
+async function plausibleRoots(unit: SaveUnit, archive: string, nowhere: string): Promise<boolean> {
+  const roots = await zipRoots(archive)
+  if (roots.length === 0) return false
+  if (roots.some((root) => !claimable(unit, root.name))) return false
+  if (roots.every((root) => unit.owns(root.name, root.kind, nowhere))) return true
+  return roots.length === 1 && roots[0].kind === 'dir'
+}
+
+/** A rename, replaceable in a test to fail where a disk might. */
+type Move = (from: string, to: string) => Promise<void>
+
+/**
  * Replace the game's entries in `dir` with the ones in the archive at
  * `archive`, which the caller has already downloaded and verified.
  *
@@ -159,8 +186,13 @@ async function backedUp(path: string, backups: string, kind: 'file' | 'dir'): Pr
  * device stays deleted, as it does under Argosy. That is the one thing a pull
  * of a unit removes, and it is logged by name.
  *
+ * All or nothing. Should any move fail part-way, every member already swapped
+ * is put back the way it was before the error is raised; and should putting
+ * one back fail too, the old copies are left where they were moved to, named
+ * in the log, rather than cleaned away.
+ *
  * Returns the names written. Throws, having changed nothing, when the archive is
- * refused or a member could not be copied aside.
+ * refused, a member could not be copied aside, or the swap failed.
  */
 export async function restoreUnit(options: {
   dir: string
@@ -169,25 +201,39 @@ export async function restoreUnit(options: {
   backups: string
   remoteTime: number
   romId: number
+  move?: Move
 }): Promise<string[]> {
   const { dir, unit, archive, backups, remoteTime, romId } = options
+  const move: Move = options.move ?? rename
   await mkdir(dir, { recursive: true })
   const { staging, aside } = await stagingFor(dir, romId)
   await rm(staging, { recursive: true, force: true })
   await rm(aside, { recursive: true, force: true })
+  /** Cleared when a failed swap could not be undone, so `aside` is kept. */
+  let asideDisposable = true
 
-  try {
-    await extractZip(archive, staging)
-    const accepted = await acceptedRoots(unit, staging)
-    if (!accepted) {
-      log.error('saves', 'refused an archive holding entries that are not this game’s', undefined, {
+  const refuse = async (roots: readonly string[]): Promise<never> => {
+    log.error(
+      'saves',
+      'refused an archive holding entries that are not this game\u2019s',
+      undefined,
+      {
         romId,
         key: unit.key,
         dir,
-        roots: (await entriesOf(staging)).map((root) => root.name)
-      })
-      throw new Error(t('error.unitRefused', { name: unit.key }))
+        roots
+      }
+    )
+    throw new Error(t('error.unitRefused', { name: unit.key }))
+  }
+
+  try {
+    if (!(await plausibleRoots(unit, archive, staging))) {
+      await refuse((await zipRoots(archive)).map((root) => root.name))
     }
+    await extractZip(archive, staging, { maxBytes: SAVE_ARCHIVE_MAX_BYTES })
+    const accepted = await acceptedRoots(unit, staging)
+    if (!accepted) return await refuse((await entriesOf(staging)).map((root) => root.name))
 
     const incoming = new Set(accepted.names)
     const local = await ownedIn(unit, dir)
@@ -202,29 +248,43 @@ export async function restoreUnit(options: {
     }
 
     await mkdir(aside, { recursive: true })
+    /** What has changed so far, in order, for the way back. */
+    const done: { name: string; had: boolean; placed: boolean }[] = []
+    try {
+      for (const name of accepted.names) {
+        const had = local.some((entry) => entry.name === name)
+        if (had) await move(join(dir, name), join(aside, name))
+        done.push({ name, had, placed: false })
+        await move(join(accepted.from, name), join(dir, name))
+        done[done.length - 1].placed = true
+      }
+      for (const entry of leaving) {
+        await move(join(dir, entry.name), join(aside, entry.name))
+        done.push({ name: entry.name, had: true, placed: false })
+      }
+    } catch (cause) {
+      log.error(
+        'saves',
+        'could not swap a pulled entry into place, putting every one back',
+        cause,
+        {
+          romId,
+          dir,
+          member: done.at(-1)?.name ?? null
+        }
+      )
+      asideDisposable = await rollBack(done, dir, aside, move)
+      throw cause
+    }
+
     for (const name of accepted.names) {
       const target = join(dir, name)
-      const old = join(aside, name)
-      const had = local.some((entry) => entry.name === name)
-      if (had) await rename(target, old)
-      try {
-        await rename(join(accepted.from, name), target)
-      } catch (cause) {
-        if (had) await rename(old, target)
-        log.error('saves', 'could not move a pulled entry into place, the old one is back', cause, {
-          romId,
-          member: name,
-          dir
-        })
-        throw cause
-      }
       const kind = (await stat(target)).isDirectory() ? 'dir' : 'file'
       for (const file of kind === 'dir' ? await walk(target) : [])
         await stampMtime(file, remoteTime)
       await stampMtime(target, remoteTime)
     }
     for (const entry of leaving) {
-      await rename(join(dir, entry.name), join(aside, entry.name))
       log.info('saves', 'removed an entry the pulled copy of this game no longer has', {
         romId,
         member: entry.name,
@@ -232,7 +292,7 @@ export async function restoreUnit(options: {
       })
     }
 
-    log.info('saves', 'replaced this game’s entries in a shared save folder', {
+    log.info('saves', 'replaced this game\u2019s entries in a shared save folder', {
       romId,
       key: unit.key,
       dir,
@@ -242,18 +302,51 @@ export async function restoreUnit(options: {
     return accepted.names
   } finally {
     await rm(staging, { recursive: true, force: true }).catch((cause: unknown) =>
-      log.warn('saves', 'could not remove a pull’s staging folder', {
+      log.warn('saves', 'could not remove a pull\u2019s staging folder', {
         staging,
         reason: (cause as Error).message
       })
     )
-    await rm(aside, { recursive: true, force: true }).catch((cause: unknown) =>
-      log.warn('saves', 'could not remove the entries a pull replaced', {
-        aside,
-        reason: (cause as Error).message
-      })
-    )
+    if (asideDisposable) {
+      await rm(aside, { recursive: true, force: true }).catch((cause: unknown) =>
+        log.warn('saves', 'could not remove the entries a pull replaced', {
+          aside,
+          reason: (cause as Error).message
+        })
+      )
+    }
   }
+}
+
+/**
+ * Undo a swap that failed part-way, newest step first: a member moved into
+ * place is taken out again, and the one it displaced is moved back.
+ *
+ * True where everything is as it was. False where some step could not be
+ * undone — then each failure is logged by name, and the displaced copies stay
+ * in `aside` for a person, with the backups beside them.
+ */
+async function rollBack(
+  done: readonly { name: string; had: boolean; placed: boolean }[],
+  dir: string,
+  aside: string,
+  move: Move
+): Promise<boolean> {
+  let whole = true
+  for (const step of done.toReversed()) {
+    try {
+      if (step.placed) await rm(join(dir, step.name), { recursive: true, force: true })
+      if (step.had) await move(join(aside, step.name), join(dir, step.name))
+    } catch (cause) {
+      whole = false
+      log.error('saves', 'could not put a member of a shared save folder back', cause, {
+        member: step.name,
+        dir,
+        kept: join(aside, step.name)
+      })
+    }
+  }
+  return whole
 }
 
 /**

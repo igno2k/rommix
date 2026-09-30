@@ -12,6 +12,7 @@ import {
   statSync,
   writeFileSync
 } from 'node:fs'
+import { rename } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import type { SaveUnit } from '@config/emulators'
@@ -405,6 +406,92 @@ describe('pulling a game’s entries', () => {
     }
     assert.deepEqual(hashes(dir), before)
     for (const member of PS2_OWNED) assert.ok(existsSync(backupPath(backups, join(dir, member), 1)))
+  })
+
+  test('a swap that fails on the second member puts the first one back too', async () => {
+    const root = scratch()
+    const dir = join(root, 'card')
+    plant(dir, PS2_CARD)
+    const before = hashes(dir)
+    const failing = async (from: string, to: string): Promise<void> => {
+      // The second member on its way in from the unpacked copy.
+      if (from.includes('.part') && from.endsWith(`/${PS2_OWNED[1]}`)) {
+        throw new Error('the disk said no')
+      }
+      await rename(from, to)
+    }
+
+    await assert.rejects(
+      restoreUnit({
+        dir,
+        unit: ps2Unit(PS2_KEY) as SaveUnit,
+        archive: await remoteArchive(ARCHIVE_CASES[0].remote),
+        backups: join(root, 'backups'),
+        remoteTime: REMOTE_TIME,
+        romId: 7,
+        move: failing
+      }),
+      /the disk said no/
+    )
+    assert.deepEqual(hashes(dir), before)
+    assert.deepEqual(readdirSync(root).sort(), ['backups', 'card'])
+  })
+
+  test('a swap that cannot be undone keeps the displaced entries rather than cleaning them away', async () => {
+    const root = scratch()
+    const dir = join(root, 'card')
+    plant(dir, PS2_CARD)
+    const failing = async (from: string, to: string): Promise<void> => {
+      const incoming = from.includes('.part') && from.endsWith(`/${PS2_OWNED[1]}`)
+      const goingBack = from.includes('.old') && from.endsWith(`/${PS2_OWNED[0]}`)
+      if (incoming || goingBack) throw new Error('the disk said no')
+      await rename(from, to)
+    }
+
+    await assert.rejects(
+      restoreUnit({
+        dir,
+        unit: ps2Unit(PS2_KEY) as SaveUnit,
+        archive: await remoteArchive(ARCHIVE_CASES[0].remote),
+        backups: join(root, 'backups'),
+        remoteTime: REMOTE_TIME,
+        romId: 7,
+        move: failing
+      })
+    )
+    const kept = readdirSync(root).find((name) => name.endsWith('.old'))
+    assert.ok(kept, 'the displaced copies are still beside the card')
+    assert.equal(
+      readFileSync(join(root, kept, PS2_OWNED[0], 'BASLUS-20152AC04'), 'latin1'),
+      PS2_CARD['BASLUS-20152AC04/BASLUS-20152AC04']
+    )
+  })
+
+  test('an archive is judged by its roots before anything is unpacked', async () => {
+    const root = scratch()
+    const dir = join(root, 'Card A')
+    plant(dir, GCI_FOLDER)
+    const before = hashes(dir)
+    let moved = 0
+    await assert.rejects(
+      restoreUnit({
+        dir,
+        unit: gameCubeUnit(GC_KEY, env),
+        // The right header under a name that is nobody's: refused on the name.
+        archive: await remoteArchive({ 'save.gci': gci('GZLE01', 'x', 'y') }),
+        backups: join(root, 'backups'),
+        remoteTime: REMOTE_TIME,
+        romId: 7,
+        move: async (from, to) => {
+          moved += 1
+          await rename(from, to)
+        }
+      }),
+      /not this game/
+    )
+    assert.equal(moved, 0)
+    assert.deepEqual(hashes(dir), before)
+    assert.deepEqual(readdirSync(root), ['Card A'])
   })
 
   test('copies rotate per member rather than piling up', async () => {

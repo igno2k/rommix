@@ -89,6 +89,14 @@ export interface SaveUnit {
    * see `SavePaths.alsoAccepts`.
    */
   alsoAccepts?: readonly string[]
+  /**
+   * What must not be running while the game's entries are replaced or removed:
+   * a program that has the folder open writes its own copy back over the one
+   * a pull put there. `markers` are strings on the command line of any of its
+   * processes — a flatpak id, an emulator's executable — and `name` is what
+   * the refusal tells the person to close.
+   */
+  busyWhile?: { name: string; markers: readonly string[] }
 }
 
 /** One directory an emulator reads and writes save data in. */

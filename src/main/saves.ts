@@ -21,6 +21,7 @@ import type {
 } from '@shared/types'
 import { partialPathOf, refusedUs, verify } from './romm/index.ts'
 import { hashOf } from './integrity.ts'
+import { processesCarrying } from './host.ts'
 import { safeJoin } from './safepath.ts'
 import type { RommClient } from './romm/index.ts'
 import type { Store } from './store.ts'
@@ -55,7 +56,14 @@ import {
 } from './savepairing.ts'
 import { progressRun, type SaveRun } from './saveprogress.ts'
 import { findUnit, removeUnit, restoreUnit } from './saveunits.ts'
-import { extractZip, membersContentHash, zipContentHash, zipDirectory, zipMembers } from './zip.ts'
+import {
+  extractZip,
+  membersContentHash,
+  SAVE_ARCHIVE_MAX_BYTES,
+  zipContentHash,
+  zipDirectory,
+  zipMembers
+} from './zip.ts'
 
 /**
  * Two-way save and save-state sync between RomM and the local emulator tree.
@@ -226,8 +234,31 @@ export class SaveSync {
     private readonly store: Store,
     private readonly client: RommClient,
     /** Where the saves a pull displaces are kept, one folder per game. */
-    private readonly backups: string
+    private readonly backups: string,
+    /** The processes carrying a marker on their command line — see `SaveUnit.busyWhile`. */
+    private readonly running: (marker: string) => Promise<string[]> = processesCarrying
   ) {}
+
+  /**
+   * Refuse to write a unit while what it names is running.
+   *
+   * Thrown rather than counted: whoever asked — the Pull button, the delete on
+   * the Saves tab, the pull before a launch — says the reason as it is, and a
+   * launch goes ahead without it. Asked just before the first write, so a pull
+   * with nothing to bring down is not refused for it.
+   */
+  private async ensureUnitIdle(unit: SaveUnit, romId: number): Promise<void> {
+    if (!unit.busyWhile) return
+    const hits: string[] = []
+    for (const marker of unit.busyWhile.markers) hits.push(...(await this.running(marker)))
+    if (hits.length === 0) return
+    log.warn('saves', 'left a shared save folder alone while its emulator runs', {
+      romId,
+      key: unit.key,
+      running: hits
+    })
+    throw new Error(t('error.unitBusy', { name: unit.busyWhile.name }))
+  }
 
   // -- where a game's saves are, and how the two ends compare --------------
 
@@ -1203,6 +1234,8 @@ export class SaveSync {
       // folder is its members, and only those go — each copied aside first,
       // the rest of the card being every other game's.
       const location = local ? this.locationFor(this.locate(local), kind) : null
+      if (location?.match === 'unit' && location.unit)
+        await this.ensureUnitIdle(location.unit, romId)
       if (location?.match === 'unit' && location.unit?.carriedAs === 'archive') {
         const removed = await removeUnit(location.dir, location.unit, this.backupDir(romId))
         log.info('saves', 'removed this game’s entries from a shared save folder', {
@@ -1522,6 +1555,8 @@ export class SaveSync {
         continue
       }
 
+      if (unit) await this.ensureUnitIdle(unit, target.rom.id)
+
       // Reported here rather than at the top of the loop: everything above is
       // a file the pull decided not to fetch, and a counter that moved for
       // those would report a run of ten over a server offering ten copies of
@@ -1729,7 +1764,7 @@ export class SaveSync {
       await download(staging)
       await mkdir(dir, { recursive: true })
       await keepBackup(dir, backups, true)
-      const extracted = await extractZip(staging, dir)
+      const extracted = await extractZip(staging, dir, { maxBytes: SAVE_ARCHIVE_MAX_BYTES })
       /**
        * Only what came out of the archive.
        *

@@ -73,29 +73,39 @@ PSP (`SaveUnit.alsoAccepts`).
 
 1. Only the newest copy in the `autosave` slot comes down. A copy with no slot
    is listed and left for a person to decide about.
-2. It is downloaded to a temporary file and checked against RomM's content
-   hash, or against its byte md5 or length, before anything else happens.
-3. It is unpacked beside the shared folder, on the same filesystem, never
-   inside it.
-4. Every root has to be the game's (`SaveUnit.owns`, asked of the unpacked
-   copy). A root the rule keeps its hands off, such as `_pcsx2_superblock`,
-   refuses the whole archive. So does anything else that is not the game's.
-   One exception: a single folder that holds the game's entries (a whole
-   card, as another client zipped it) is read one level down, and only the
-   game's entries are taken.
-5. Every member about to be replaced or removed is copied into
+2. Nothing is written into a unit while RetroDECK or the unit's emulator is
+   running (its command line carries RetroDECK's flatpak id, or the
+   emulator's name). A pull or delete asked for on the game screen says so; the
+   automatic one before a launch skips the unit and logs it.
+3. The copy is downloaded to a temporary file and checked against RomM's
+   content hash, or its byte md5 or length, before anything else happens.
+4. Its roots are read from the archive's directory before it is unpacked. A
+   root the rule keeps its hands off (`_pcsx2_superblock`) refuses the whole
+   archive, and so does any root the rule does not claim by its name alone —
+   a GCI by its Dolphin-style `<maker>-<code>-` name, a PSP folder by its
+   prefix. The one shape let past is a single folder, which may be a whole
+   card another client zipped. An archive that declares more than
+   `SAVE_ARCHIVE_MAX_BYTES` unpacked is refused as well.
+5. It is unpacked beside the shared folder, on the same filesystem, never
+   inside it. Every root is then judged again by what it holds
+   (`SaveUnit.owns` reading the GCI header or PARAM.SFO of the unpacked copy).
+   A single folder is read one level down, and only the game's entries in it
+   are taken.
+6. Every member about to be replaced or removed is copied into
    `<RomMix>/saves/<romId>/<member>.<n>` first, with the usual rotation. If a
    copy cannot be taken, nothing is changed.
-6. Each member is swapped in by renames: the old one aside, the new one in,
-   the old one back if that fails. A member that exists here but not in the
-   archive is removed, after its copy. That is the one deletion a pull makes,
-   and it is logged by name.
-7. Nothing else in the folder is read for an upload or written by a pull. The
+7. The members are swapped in by renames, all or nothing: if any move fails,
+   every member already swapped is put back before the error is raised. If one
+   cannot be put back, the displaced copies are left beside the folder and
+   named in the log, rather than cleaned away. A member that exists here but
+   not in the archive is removed, after its copy. That is the one deletion a
+   pull makes, and it is logged by name.
+8. Nothing else in the folder is read for an upload or written by a pull. The
    tests hash the whole folder minus the game's members before and after
    (`saveunits.test.ts`, `savesync-units.test.ts`).
 
 Deleting a unit "on this device" removes the game's members, each copied aside
-first, and nothing else.
+first, and nothing else, under the same running-emulator guard.
 
 ## Save setup
 

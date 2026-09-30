@@ -1104,6 +1104,10 @@ export const fr: Catalog = {
     "Seule une partie de {name} est arrivée depuis RomM ; le fichier n'a pas été touché.",
   'error.saveTreeTooLarge':
     'Ce dossier de sauvegarde est trop volumineux pour être envoyé en une archive.',
+  'error.saveArchiveTooLarge':
+    "La copie sur RomM se décompresse en bien plus qu'une sauvegarde ne peut peser : elle n'a pas été utilisée.",
+  'error.unitBusy':
+    "Fermez d'abord {name} et tout jeu : un émulateur en cours écraserait les sauvegardes en train d'être remplacées.",
   'error.unitRefused':
     "La copie sur RomM des sauvegardes rangées sous {name} contient des données qui ne sont pas celles de ce jeu : la carte partagée n'a pas été modifiée.",
   'error.unitNoBackup':

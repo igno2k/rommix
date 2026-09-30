@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { execFileSync } from 'node:child_process'
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -17,6 +18,7 @@ import {
   extractZip,
   isZip,
   membersContentHash,
+  SAVE_ARCHIVE_MAX_BYTES,
   zipContentHash,
   zipDirectory,
   zipMembers,
@@ -463,4 +465,16 @@ test('the content hash follows what is in the files', async () => {
     await zipContentHash(join(root, 'mine.zip'))
   )
   assert.equal(await membersContentHash(join(root, 'CARD'), ['none']), null)
+})
+
+test('an archive that unpacks to more than it may is refused before anything is written', async () => {
+  const root = scratch()
+  plant(join(root, 'src'), { 'a.bin': 'x'.repeat(4096), 'b.bin': 'y'.repeat(4096) })
+  const zipPath = join(root, 'big.zip')
+  await zipDirectory(join(root, 'src'), zipPath)
+
+  await assert.rejects(extractZip(zipPath, join(root, 'out'), { maxBytes: 8191 }), /far more/)
+  assert.equal(existsSync(join(root, 'out')), false)
+  assert.equal((await extractZip(zipPath, join(root, 'ok'), { maxBytes: 8192 })).length, 2)
+  assert.ok(SAVE_ARCHIVE_MAX_BYTES >= 64 * 1024 * 1024, 'a real save fits')
 })
