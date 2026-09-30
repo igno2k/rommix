@@ -5,7 +5,7 @@ import type { SaveProgress } from '@shared/api'
 import { localize } from '@shared/i18n'
 import { changedAt, mayBeSentUnasked, AUTOSAVE_SLOT } from '@shared/saveassets'
 import { SAVE_CONVENTIONS, emulatorById } from '@config/emulators'
-import type { SaveContext, SaveLocation, SavePaths } from '@config/emulators'
+import type { SaveContext, SaveLocation, SavePaths, SaveUnit } from '@config/emulators'
 import type {
   EmulatorState,
   PendingSave,
@@ -53,7 +53,8 @@ import {
   slotToSend
 } from './savepairing.ts'
 import { progressRun, type SaveRun } from './saveprogress.ts'
-import { extractZip, zipDirectory } from './zip.ts'
+import { findUnit, removeUnit, restoreUnit } from './saveunits.ts'
+import { extractZip, zipDirectory, zipMembers } from './zip.ts'
 
 /**
  * Two-way save and save-state sync between RomM and the local emulator tree.
@@ -79,6 +80,10 @@ import { extractZip, zipDirectory } from './zip.ts'
  *  - `shared`     a memory card or NAND every game writes to. Skipped, with a
  *                 reason the buttons can show, rather than uploading one game's
  *                 card under another game's id.
+ *  - `unit`       a card every game writes to, where the descriptor can still
+ *                 name the game's own entries. Only those are carried — as one
+ *                 zip of them, or as the one file — and a pull replaces only
+ *                 those; see `saveunits.ts`.
  *
  * RomM records which emulator produced each save, and both directions use the
  * same answer for what this device is — `localTag` — so a RetroArch `.srm` is
@@ -161,6 +166,15 @@ interface LocalAsset {
   mtimeMs: number
   /** True when `path` is a directory to be archived rather than a file. */
   isDirectory?: boolean
+  /**
+   * The game's entries in a shared folder, when this asset is a unit.
+   *
+   * Carried as a file, `path` is that file. Carried as an archive, `path` is a
+   * name inside `dir` that nothing is ever written to — what the renderer
+   * echoes back to pick the asset — and every read and write goes through the
+   * members instead.
+   */
+  unit?: { dir: string; members: readonly string[]; carriedAs: 'archive' | 'file' }
 }
 
 /** One kind's files, ready to go, with what sending them needs. */
@@ -288,9 +302,7 @@ export class SaveSync {
 
   private locationFor(paths: SavePaths, kind: 'save' | 'state'): SaveLocation | null {
     const location = kind === 'save' ? paths.saves : paths.states
-    // A unit is resolved but not yet moved: until the sync reads a unit as the
-    // entries it owns, the folder around them is everyone's.
-    return location && location.match !== 'shared' && location.match !== 'unit' ? location : null
+    return location && location.match !== 'shared' ? location : null
   }
 
   /**
@@ -305,6 +317,16 @@ export class SaveSync {
    */
   private tagDecides(kind: 'save' | 'state', location: SaveLocation): boolean {
     return !(kind === 'save' && location.match === 'rom-stem')
+  }
+
+  /**
+   * The tags a pull of this kind also takes: the descriptor's, and for a unit
+   * the ones other clients upload the same files under — see
+   * `SaveUnit.alsoAccepts`.
+   */
+  private alsoAcceptedFor(paths: SavePaths, kind: 'save' | 'state'): readonly string[] {
+    const unit = kind === 'save' ? paths.saves?.unit : undefined
+    return [...(paths.alsoAccepts ?? []), ...(unit?.alsoAccepts ?? [])]
   }
 
   /** The tag this device uploads under — see `localTag` in `savefiles.ts`. */
@@ -349,6 +371,10 @@ export class SaveSync {
     since = 0
   ): Promise<LocalAsset[]> {
     const stem = romStemOf(rom, romPath)
+
+    if (location.match === 'unit' && location.unit) {
+      return this.findUnitAsset(location.dir, location.unit, stem, since)
+    }
 
     // A directory save is one asset: the folder itself, named after the game so
     // the server has something readable to show.
@@ -403,6 +429,57 @@ export class SaveSync {
       }
     }
     return results
+  }
+
+  /**
+   * A game's entries in a shared folder, as the one asset they travel as.
+   *
+   * Named after the ROM with the extension the server holds them under — a zip,
+   * or the one file's own — which is the name Argosy uploads them by. Nothing
+   * about the server copy's name identifies the save anyway: RomM stamps every
+   * copy it files into a slot, and a unit is always the slot holder.
+   */
+  private async findUnitAsset(
+    dir: string,
+    unit: SaveUnit,
+    stem: string,
+    since: number
+  ): Promise<LocalAsset[]> {
+    const found = await findUnit(dir, unit)
+    if (found.members.length === 0 || found.newest <= since) return []
+    if (unit.carriedAs === 'file') {
+      const member = found.members[0]
+      return [
+        {
+          path: join(dir, member),
+          fileName: `${stem}${extname(member)}`,
+          mtimeMs: found.newest,
+          unit: { dir, members: found.members, carriedAs: 'file' }
+        }
+      ]
+    }
+    const fileName = `${stem}.zip`
+    return [
+      {
+        path: join(dir, fileName),
+        fileName,
+        mtimeMs: found.newest,
+        isDirectory: true,
+        unit: { dir, members: found.members, carriedAs: 'archive' }
+      }
+    ]
+  }
+
+  /** How big an asset is, a unit being the sum of its members. */
+  private async assetSize(asset: LocalAsset): Promise<number> {
+    if (asset.unit?.carriedAs !== 'archive') return sizeOf(asset.path, asset.isDirectory === true)
+    let total = 0
+    for (const member of asset.unit.members) {
+      const path = join(asset.unit.dir, member)
+      const info = await stat(path).catch(() => null)
+      if (info) total += await sizeOf(path, info.isDirectory())
+    }
+    return total
   }
 
   /**
@@ -478,6 +555,10 @@ export class SaveSync {
     target: SaveTarget
   ): string | null {
     if (kind === 'state') return null
+    // A unit is the slot holder by definition: it is the game's whole save on
+    // that card, and the slot is what every client pairs it on.
+    const unit = local.find((asset) => asset.unit !== undefined)
+    if (unit) return unit.fileName
     return primarySave(
       local.filter((asset) => !asset.isDirectory).map((asset) => asset.fileName),
       romStemOf(target.rom, target.romPath)
@@ -544,7 +625,7 @@ export class SaveSync {
     let primary: string | null = null
     let primaryKey: string | null = null
     let tag: string | null = null
-    let alsoAccepts: readonly string[] = []
+    const alsoAccepts: Record<'save' | 'state', readonly string[]> = { save: [], state: [] }
     /**
      * The kinds a pull judges by the tag — see `tagDecides`.
      *
@@ -557,8 +638,8 @@ export class SaveSync {
     if (local) {
       const paths = this.locate(local)
       tag = this.tagFor(paths, local)
-      alsoAccepts = paths.alsoAccepts ?? []
       for (const kind of ['save', 'state'] as const) {
+        alsoAccepts[kind] = this.alsoAcceptedFor(paths, kind)
         const location = this.locationFor(paths, kind)
         if (!location) continue
         byTag[kind] = this.tagDecides(kind, location)
@@ -640,7 +721,7 @@ export class SaveSync {
         sizeBytes: item.file_size_bytes,
         emulator: item.emulator,
         forAnotherEmulator:
-          byTag[kind] && tag !== null && !acceptsTag(tag, item.emulator, alsoAccepts),
+          byTag[kind] && tag !== null && !acceptsTag(tag, item.emulator, alsoAccepts[kind]),
         localPath: localFile?.path ?? null,
         localModifiedAt: localFile ? new Date(localFile.mtimeMs).toISOString() : null,
         fromThisDevice,
@@ -663,7 +744,7 @@ export class SaveSync {
         // happened, and blanking either would blank exactly the rows a person
         // opened this screen to send.
         slot: key === primaryKey ? AUTOSAVE_SLOT : null,
-        sizeBytes: await sizeOf(file.path, file.isDirectory === true),
+        sizeBytes: await this.assetSize(file),
         // The tag it *would* carry, which is what makes the row readable: the
         // emulator column would otherwise be blank on exactly the rows that
         // have not been anywhere yet.
@@ -870,7 +951,7 @@ export class SaveSync {
           kind,
           fileName: asset.fileName,
           path: asset.path,
-          sizeBytes: await sizeOf(asset.path, asset.isDirectory === true),
+          sizeBytes: await this.assetSize(asset),
           modifiedAt: new Date(asset.mtimeMs).toISOString(),
           emulator: tag,
           slot: slotToSend(asset.fileName, primary),
@@ -1100,6 +1181,19 @@ export class SaveSync {
 
     if (scope === 'local') {
       if (!asset.localPath) throw new Error(t('error.assetNotLocal', { file: fileName }))
+      // A unit's path names nothing on the disk: what is this game's in that
+      // folder is its members, and only those go — each copied aside first,
+      // the rest of the card being every other game's.
+      const location = local ? this.locationFor(this.locate(local), kind) : null
+      if (location?.match === 'unit' && location.unit?.carriedAs === 'archive') {
+        const removed = await removeUnit(location.dir, location.unit, this.backupDir(romId))
+        log.info('saves', 'removed this game’s entries from a shared save folder', {
+          romId,
+          dir: location.dir,
+          removed
+        })
+        return
+      }
       await rm(asset.localPath, { force: true, recursive: true })
       return
     }
@@ -1209,7 +1303,7 @@ export class SaveSync {
      */
     const tag = this.tagFor(paths, target)
     const usable = this.tagDecides(kind, location)
-      ? remote.filter((item) => acceptsTag(tag, item.emulator, paths.alsoAccepts))
+      ? remote.filter((item) => acceptsTag(tag, item.emulator, this.alsoAcceptedFor(paths, kind)))
       : remote
     // What was left, and why. A pull that brings nothing down is otherwise a
     // count of zero against a screen that is still listing the file, which reads
@@ -1224,7 +1318,16 @@ export class SaveSync {
       })
     }
 
-    const wanted = this.toPull(kind, usable)
+    const unit = location.match === 'unit' ? (location.unit ?? null) : null
+    /**
+     * A unit comes down from its slot and from nowhere else. It is the game's
+     * whole save on that card, which every client files under the one slot; a
+     * copy with no slot is something a person put there by hand, and unpacking
+     * it over the game's entries is a decision for the game screen, not a sync.
+     */
+    const wanted = this.toPull(kind, usable).filter(
+      (entry) => !unit || entry.slot === AUTOSAVE_SLOT
+    )
     if (wanted.length === 0) return { written: 0, offered: remote.length, failed: 0 }
 
     /**
@@ -1239,7 +1342,7 @@ export class SaveSync {
      * displaced into within three of them.
      */
     const isArchive = (item: RommSave | RommState): boolean =>
-      item.file_name.endsWith(ARCHIVE_SUFFIX)
+      unit ? unit.carriedAs === 'archive' : item.file_name.endsWith(ARCHIVE_SUFFIX)
     const newestArchive = wanted
       .filter((entry) => isArchive(entry.item))
       .sort((a, b) => Date.parse(b.item.updated_at) - Date.parse(a.item.updated_at))[0]
@@ -1301,6 +1404,21 @@ export class SaveSync {
        */
       const archive = isArchive(item)
       /**
+       * A unit archive is a zip, and nothing else unpacks: Argosy also accepts a
+       * single `.gci` for GameCube, which RomMix never writes, and reading it as
+       * an archive would fail halfway into the pull.
+       */
+      if (unit && archive && extname(item.file_name).toLowerCase() !== '.zip') {
+        log.warn('saves', 'left a copy of a shared card that is not an archive', {
+          romId: target.rom.id,
+          id: item.id,
+          fileName: item.file_name,
+          key: unit.key
+        })
+        failed += 1
+        continue
+      }
+      /**
        * `safeJoin` because `file_name` is the server's, and a save uploaded
        * through RomM's own web interface can be called anything. The rest of the
        * main process already guards this input — see `bios.ts`, `downloads.ts`
@@ -1311,7 +1429,9 @@ export class SaveSync {
         ? location.dir
         : await safeJoin(
             location.dir,
-            slot === null ? item.file_name : `${stem}${extname(item.file_name)}`
+            // A unit carried as a file lands under the name the emulator opens,
+            // which the rule knows and the ROM's name is not.
+            unit?.fileName ?? (slot === null ? item.file_name : `${stem}${extname(item.file_name)}`)
           )
       if (fresh === null) {
         log.error('saves', `refused a ${kind} name that leaves the save folder`, undefined, {
@@ -1348,9 +1468,13 @@ export class SaveSync {
       // For an archive that is the newest thing in the folder, which is what
       // `findLocal` stamps its synthetic asset with — a directory's own mtime
       // says nothing about the saves inside it.
-      const landed = archive
-        ? this.env.newest(location.dir) || undefined
-        : (match?.mtimeMs ?? (await stat(destination).catch(() => null))?.mtimeMs)
+      // A unit's age is its members', never the shared folder's, which every
+      // other game on the card moves.
+      const landed = unit
+        ? match?.mtimeMs
+        : archive
+          ? this.env.newest(location.dir) || undefined
+          : (match?.mtimeMs ?? (await stat(destination).catch(() => null))?.mtimeMs)
       if (landed !== undefined && landed >= remoteTime - SYNC_TOLERANCE_MS) continue
 
       /**
@@ -1394,7 +1518,18 @@ export class SaveSync {
 
       try {
         const backups = this.backupDir(target.rom.id)
-        if (item.file_name.endsWith(ARCHIVE_SUFFIX)) {
+        if (unit && archive) {
+          await this.restoreUnitArchive(
+            location.dir,
+            unit,
+            backups,
+            download,
+            remoteTime,
+            contentHashOf(item),
+            item.file_size_bytes,
+            target.rom.id
+          )
+        } else if (archive) {
           await this.restoreArchive(location.dir, backups, download, remoteTime)
         } else {
           await this.restoreFile(
@@ -1508,6 +1643,42 @@ export class SaveSync {
       await stampMtime(destination, remoteTime)
     } finally {
       await rm(partial, { force: true }).catch(() => undefined)
+    }
+  }
+
+  /**
+   * Bring down one game's entries of a shared card and swap them in.
+   *
+   * Downloaded and checked the way a single file is — the md5 RomM states, or
+   * the length where it states none — before `restoreUnit` looks at it: an
+   * archive cut short can still list its roots, and unpacking one is a save
+   * replaced by part of itself.
+   */
+  private async restoreUnitArchive(
+    dir: string,
+    unit: SaveUnit,
+    backups: string,
+    download: (to: string) => Promise<void>,
+    remoteTime: number,
+    contentHash: string | null,
+    expectedBytes: number,
+    romId: number
+  ): Promise<void> {
+    const archive = join(tmpdir(), `rommix-unit-${romId}-${Date.now()}.zip`)
+    try {
+      await download(archive)
+      if (contentHash) {
+        await verify(
+          archive,
+          { algorithm: 'md5', expected: contentHash },
+          { kind: 'save', fileName: `${unit.key}.zip` }
+        )
+      } else if (expectedBytes > 0 && (await sizeOf(archive, false)) !== expectedBytes) {
+        throw new Error(t('error.saveEndedEarly', { name: unit.key }))
+      }
+      await restoreUnit({ dir, unit, archive, backups, remoteTime, romId })
+    } finally {
+      await rm(archive, { force: true }).catch(() => undefined)
     }
   }
 
@@ -1667,7 +1838,11 @@ export class SaveSync {
       try {
         if (asset.isDirectory) {
           staged = join(tmpdir(), `rommix-save-${target.rom.id}-${Date.now()}.zip`)
-          const count = await zipDirectory(asset.path, staged)
+          // A unit's archive holds its members and nothing else of the card.
+          const count =
+            asset.unit?.carriedAs === 'archive'
+              ? await zipMembers(asset.unit.dir, asset.unit.members, staged)
+              : await zipDirectory(asset.path, staged)
           if (count === 0) {
             log.info('saves', 'save folder is empty, nothing to upload', {
               romId: target.rom.id,
@@ -1728,6 +1903,14 @@ export class SaveSync {
    */
   private async stampUploaded(asset: LocalAsset, remoteTime: number): Promise<void> {
     if (!Number.isFinite(remoteTime)) return
+    if (asset.unit?.carriedAs === 'archive') {
+      for (const member of asset.unit.members) {
+        const path = join(asset.unit.dir, member)
+        for (const file of await walk(path)) await stampMtime(file, remoteTime)
+        await stampMtime(path, remoteTime)
+      }
+      return
+    }
     if (!asset.isDirectory) {
       await stampMtime(asset.path, remoteTime)
       return
