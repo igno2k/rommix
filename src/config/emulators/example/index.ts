@@ -1,4 +1,4 @@
-import { directory, joinPath, perRom, shared } from '../savepaths.ts'
+import { directory, joinPath, perRom, shared, unit } from '../savepaths.ts'
 import type { EmulatorDescriptor } from '../types.ts'
 
 /**
@@ -245,6 +245,12 @@ export const example: EmulatorDescriptor = {
    *                         files inside carry no name tying them to a ROM.
    *   shared(dir)           a memory card, NAND or nvram every game writes to.
    *                         Skipped rather than uploaded under one game's id.
+   *   unit(dir, rule)       a folder every game writes to, in which this game's
+   *                         entries can be told apart by a key from the game
+   *                         itself — `ctx.saveTarget`, RomM's reading of it.
+   *                         `rule.owns` claims the entries, and only those are
+   *                         synced, as one zip whose roots they are. The rules
+   *                         are in `units/`.
    *
    * `emulator` overrides the tag RomM records against the save, and should be
    * set by a frontend to the emulator it dispatched to — a save written by
@@ -368,4 +374,4 @@ export const example: EmulatorDescriptor = {
  * `saves` field can return. Referencing them here rather than only in a comment
  * means a rename breaks this file instead of leaving the documentation wrong.
  */
-export const SAVE_HELPERS = { perRom, directory, shared, joinPath }
+export const SAVE_HELPERS = { perRom, directory, shared, unit, joinPath }

@@ -32,8 +32,58 @@ import type { Text } from '@shared/i18n'
  *  - `shared`     one memory card, NAND or nvram shared by every game. There is
  *                 nothing here that can honestly be attributed to this ROM, so
  *                 it is skipped rather than uploaded under this game's id.
+ *  - `unit`       a folder every game writes to, in which this game's entries
+ *                 can still be told apart by a key the game itself carries — a
+ *                 PS2 folder memory card. Only the entries `unit.owns` claims
+ *                 are synced, and nothing else in the folder is read or written.
  */
-export type SaveMatch = 'rom-stem' | 'directory' | 'shared'
+export type SaveMatch = 'rom-stem' | 'directory' | 'shared' | 'unit'
+
+/**
+ * One game's save data, as the entries it owns inside a folder other games
+ * share.
+ *
+ * On the server it is the shape Argosy, RomM's reference client, uploads: one
+ * zip whose roots are the owned entries, as they are on the disk. A manifest or
+ * a layout of RomMix's own would make the two clients unreadable to each other.
+ */
+export interface SaveUnit {
+  /** What names the game's entries — a PS2 serial. Logged, never used as a path. */
+  key: string
+  /**
+   * Does the entry `name`, directly inside the shared folder, belong to the
+   * game? Asked of the disk and of an archive's roots alike, so "never touches
+   * another game's entries" is one rule rather than two that can drift.
+   */
+  owns(name: string, kind: 'file' | 'dir'): boolean
+  /**
+   * Tags other clients upload the same files under, accepted and never sent —
+   * see `SavePaths.alsoAccepts`.
+   */
+  alsoAccepts: readonly string[]
+  /**
+   * What must not be running while the game's entries are replaced or removed:
+   * a program that has the folder open writes its own copy back over the one
+   * a pull put there.
+   */
+  busyWhile?: BusyWhile
+}
+
+/**
+ * A flatpak app and the programs it runs, any of which running counts.
+ *
+ * Both, because neither is enough alone: `flatpak ps` lists the app while
+ * anything of it runs, and the programs are looked for by name in the process
+ * table, which still answers where `flatpak ps` cannot be asked.
+ */
+export interface BusyWhile {
+  /** What a refusal tells the person to close. */
+  name: string
+  /** The flatpak's id, as `flatpak ps` lists it. */
+  appId: string
+  /** Executables, by the name they run under — the emulator itself. */
+  programs: readonly string[]
+}
 
 /** One directory an emulator reads and writes save data in. */
 export interface SaveLocation {
@@ -54,6 +104,8 @@ export interface SaveLocation {
    */
   search?: readonly string[]
   match: SaveMatch
+  /** What this game owns inside `dir`. Present exactly when `match` is `unit`. */
+  unit?: SaveUnit
 }
 
 /** Everything a descriptor can say about one game's save data. */
@@ -189,6 +241,16 @@ export interface SaveContext {
   installDir: string | null
   /** The launch variant the user chose, when the emulator offers several. */
   variant?: string
+  /**
+   * RomM's `save_target`: what its scan read out of the game to name the
+   * game's saves by — a PS2 serial — or null where the server sent none.
+   *
+   * The only reliable key for an emulator that files every game's saves in one
+   * folder under an id from inside the disc. Reading it here would mean parsing
+   * disc images in a descriptor, so the server's reading is taken, as Argosy
+   * takes it.
+   */
+  saveTarget?: string | null
   env: SaveEnvironment
 }
 
@@ -234,6 +296,11 @@ export function shared(dir: string): SaveLocation {
 /** A location whose whole directory is this game's save data. */
 export function directory(dir: string): SaveLocation {
   return { dir, match: 'directory' }
+}
+
+/** A location in which this game owns only the entries `rule` claims. */
+export function unit(dir: string, rule: SaveUnit): SaveLocation {
+  return { dir, match: 'unit', unit: rule }
 }
 
 /** A location holding files named after the ROM. */

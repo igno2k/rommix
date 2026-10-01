@@ -212,5 +212,7 @@ export type {
   SaveEnvironment,
   SaveLocation,
   SaveMatch,
-  SavePaths
+  BusyWhile,
+  SavePaths,
+  SaveUnit
 } from './savepaths.ts'
