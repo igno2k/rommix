@@ -1050,6 +1050,8 @@ export const fr: Catalog = {
     "Seule une partie de {name} est arrivée depuis RomM ; le fichier n'a pas été touché.",
   'error.saveTreeTooLarge':
     'Ce dossier de sauvegarde est trop volumineux pour être envoyé en une archive.',
+  'error.saveArchiveTooLarge':
+    "La copie sur RomM se décompresse en bien plus qu'une sauvegarde ne peut peser : elle n'a pas été utilisée.",
   'error.emptyAssetBody': 'Corps de fichier vide',
   'error.credentialsRequired': 'L’identifiant et le mot de passe sont obligatoires',
   'error.tokenRequired': 'Un jeton API est obligatoire',

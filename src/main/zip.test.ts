@@ -1,10 +1,29 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { extractZip, isZip, zipDirectory } from './zip.ts'
+import { PS2_CARD, PS2_OWNED, type FixtureTree } from '@config/emulators/units/fixtures.ts'
+import {
+  extractZip,
+  isZip,
+  membersContentHash,
+  SAVE_ARCHIVE_MAX_BYTES,
+  zipContentHash,
+  zipDirectory,
+  zipMembers,
+  zipRoots
+} from './zip.ts'
 
 /**
  * The zip writer, round-tripped.
@@ -280,4 +299,189 @@ test('a file too short to have a signature is not a zip', async () => {
 
   assert.equal(await isZip(tiny), false)
   assert.equal(await isZip(join(dir, 'not-there-at-all')), false)
+})
+
+/** Write a fixture tree under `root`, contents as latin1 bytes. */
+function plant(root: string, tree: FixtureTree): void {
+  for (const [relative, contents] of Object.entries(tree)) {
+    mkdirSync(join(root, relative, '..'), { recursive: true })
+    writeFileSync(join(root, relative), Buffer.from(contents, 'latin1'))
+  }
+}
+
+test('a game\u2019s members are the roots of the archive, and nothing else of the folder is in it', async () => {
+  const root = scratch()
+  const card = join(root, 'Mcd001.ps2')
+  plant(card, PS2_CARD)
+
+  const zipPath = join(root, 'unit.zip')
+  assert.equal(await zipMembers(card, PS2_OWNED, zipPath), 5)
+
+  // Argosy's shape: each save folder a root, as it is on the card, and the
+  // card's own name and its superblock nowhere.
+  assert.deepEqual(
+    (await zipRoots(zipPath)).sort((a, b) => (a.name < b.name ? -1 : 1)),
+    [
+      { name: 'BASLUS-20152AC04', kind: 'dir' },
+      { name: 'BASLUS-20152SYS', kind: 'dir' }
+    ]
+  )
+  const back = join(root, 'back')
+  await extractZip(zipPath, back)
+  assert.equal(
+    readFileSync(join(back, 'BASLUS-20152SYS', 'settings'), 'latin1'),
+    PS2_CARD['BASLUS-20152SYS/settings']
+  )
+})
+
+test('a file member is a root file of its own', async () => {
+  const root = scratch()
+  writeFileSync(join(root, 'a.bin'), 'first')
+  writeFileSync(join(root, 'b.bin'), 'second')
+  writeFileSync(join(root, 'c.bin'), 'not asked for')
+
+  const zipPath = join(root, 'out', 'unit.zip')
+  assert.equal(await zipMembers(root, ['b.bin', 'a.bin', 'gone.bin'], zipPath), 2)
+  assert.deepEqual(await zipRoots(zipPath), [
+    { name: 'a.bin', kind: 'file' },
+    { name: 'b.bin', kind: 'file' }
+  ])
+})
+
+test('the same files make the same bytes, whenever and in whatever order they were listed', async () => {
+  // RomM files a slot upload by its md5, so two devices pushing one unchanged
+  // save must send one archive.
+  const one = scratch()
+  const other = scratch()
+  plant(join(one, 'card'), PS2_CARD)
+  plant(join(other, 'card'), PS2_CARD)
+  const later = new Date('2030-01-01T00:00:00Z')
+  utimesSync(join(other, 'card', 'BASLUS-20152SYS', 'settings'), later, later)
+
+  await zipMembers(join(one, 'card'), PS2_OWNED, join(one, 'a.zip'))
+  await zipMembers(join(other, 'card'), PS2_OWNED.toReversed(), join(other, 'b.zip'))
+
+  assert.deepEqual(readFileSync(join(one, 'a.zip')), readFileSync(join(other, 'b.zip')))
+})
+
+test('no member left to archive writes nothing', async () => {
+  const root = scratch()
+  mkdirSync(join(root, 'EMPTYDIR'))
+  assert.equal(await zipMembers(root, ['EMPTYDIR', 'missing'], join(root, 'none.zip')), 0)
+})
+
+test('the roots of an archive another client wrote are read the same way', async () => {
+  const root = scratch()
+  const source = join(root, 'src')
+  plant(source, {
+    'CARD/BASLUS-20152AC04/icon.sys': 'x',
+    'CARD/_pcsx2_superblock': 'y',
+    'loose.bin': 'z'
+  })
+  const zipPath = join(root, 'legacy.zip')
+  await zipDirectory(source, zipPath)
+
+  assert.deepEqual(await zipRoots(zipPath), [
+    { name: 'CARD', kind: 'dir' },
+    { name: 'loose.bin', kind: 'file' }
+  ])
+  // One level down: what a whole card zipped by another client holds.
+  assert.deepEqual(await zipRoots(zipPath, 'CARD'), [
+    { name: 'BASLUS-20152AC04', kind: 'dir' },
+    { name: '_pcsx2_superblock', kind: 'file' }
+  ])
+  assert.deepEqual(await zipRoots(zipPath, 'elsewhere'), [])
+})
+
+test('an archive that cannot be read has no roots to offer, and says so', async () => {
+  const root = scratch()
+  writeFileSync(join(root, 'bad.zip'), 'not a zip')
+  await assert.rejects(zipRoots(join(root, 'bad.zip')))
+})
+
+test(
+  'the members archive opens in a different implementation too',
+  { skip: !haveUnzip() },
+  async () => {
+    const root = scratch()
+    plant(join(root, 'card'), PS2_CARD)
+    const zipPath = join(root, 'unit.zip')
+    await zipMembers(join(root, 'card'), PS2_OWNED, zipPath)
+    const listing = execFileSync('unzip', ['-Z1', zipPath], { encoding: 'utf8' }).trim().split('\n')
+    assert.deepEqual(listing, [
+      'BASLUS-20152AC04/BASLUS-20152AC04',
+      'BASLUS-20152AC04/_pcsx2_index',
+      'BASLUS-20152AC04/icon.sys',
+      'BASLUS-20152SYS/icon.sys',
+      'BASLUS-20152SYS/settings'
+    ])
+  }
+)
+
+/**
+ * What RomM records as `content_hash` for the fixture card's two save folders,
+ * zipped here — computed by RomM's own `hash_zip_contents`, run with Python's
+ * `zipfile` over the archive `zipMembers` writes. Pinned, so a change to either
+ * side of the transcription fails here rather than as every pull refused.
+ */
+const ROMM_CONTENT_HASH = '029332a3e0424f88f1e4a53eb8898cfc'
+
+test('an archive hashes the way RomM hashes it, by what is in it', async () => {
+  const root = scratch()
+  plant(join(root, 'card'), PS2_CARD)
+  const zipPath = join(root, 'unit.zip')
+  await zipMembers(join(root, 'card'), PS2_OWNED, zipPath)
+
+  assert.equal(await zipContentHash(zipPath), ROMM_CONTENT_HASH)
+  // And the files on the disk to the same, without an archive being made.
+  assert.equal(await membersContentHash(join(root, 'card'), PS2_OWNED), ROMM_CONTENT_HASH)
+})
+
+/** Is the system `zip` there, to write an archive some other way than RomMix does? */
+function haveZip(): boolean {
+  try {
+    execFileSync('zip', ['-v'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+test('the content hash ignores how an archive was made', { skip: !haveZip() }, async () => {
+  const root = scratch()
+  plant(join(root, 'CARD'), { 'a/one': '1', 'b/two': '2' })
+  await zipDirectory(join(root, 'CARD'), join(root, 'mine.zip'))
+  // Another writer's archive, with its folder entries, which do not count.
+  const other = join(root, 'other.zip')
+  execFileSync('zip', ['-q', '-r', '-9', other, 'b', 'a'], { cwd: join(root, 'CARD') })
+  assert.equal(await zipContentHash(other), await zipContentHash(join(root, 'mine.zip')))
+})
+
+test('the content hash follows what is in the files', async () => {
+  const root = scratch()
+  plant(join(root, 'CARD'), { 'a/one': '1', 'b/two': '2' })
+  await zipDirectory(join(root, 'CARD'), join(root, 'mine.zip'))
+  assert.equal(
+    await membersContentHash(join(root, 'CARD'), ['a', 'b']),
+    await zipContentHash(join(root, 'mine.zip'))
+  )
+
+  writeFileSync(join(root, 'CARD', 'a', 'one'), 'changed')
+  assert.notEqual(
+    await membersContentHash(join(root, 'CARD'), ['a', 'b']),
+    await zipContentHash(join(root, 'mine.zip'))
+  )
+  assert.equal(await membersContentHash(join(root, 'CARD'), ['none']), null)
+})
+
+test('an archive that unpacks to more than it may is refused before anything is written', async () => {
+  const root = scratch()
+  plant(join(root, 'src'), { 'a.bin': 'x'.repeat(4096), 'b.bin': 'y'.repeat(4096) })
+  const zipPath = join(root, 'big.zip')
+  await zipDirectory(join(root, 'src'), zipPath)
+
+  await assert.rejects(extractZip(zipPath, join(root, 'out'), { maxBytes: 8191 }), /far more/)
+  assert.equal(existsSync(join(root, 'out')), false)
+  assert.equal((await extractZip(zipPath, join(root, 'ok'), { maxBytes: 8192 })).length, 2)
+  assert.ok(SAVE_ARCHIVE_MAX_BYTES >= 64 * 1024 * 1024, 'a real save fits')
 })

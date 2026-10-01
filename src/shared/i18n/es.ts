@@ -1037,6 +1037,8 @@ export const es: Catalog = {
   'error.saveEndedEarly': 'Solo llegó parte de {name} desde RomM, así que no se tocó el archivo.',
   'error.saveTreeTooLarge':
     'Esta carpeta de partidas es demasiado grande para enviarse como un solo archivo.',
+  'error.saveArchiveTooLarge':
+    'La copia en RomM se descomprime en mucho más de lo que puede ocupar una partida, así que no se usó.',
   'error.emptyAssetBody': 'Cuerpo de archivo vacío',
   'error.credentialsRequired': 'El usuario y la contraseña son obligatorios',
   'error.tokenRequired': 'Hace falta un token de API',

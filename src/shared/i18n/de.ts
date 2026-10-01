@@ -1061,6 +1061,8 @@ export const de: Catalog = {
     'Von {name} kam nur ein Teil von RomM an, daher blieb die Datei unberührt.',
   'error.saveTreeTooLarge':
     'Dieser Spielstand-Ordner ist zu groß, um als ein Archiv gesendet zu werden.',
+  'error.saveArchiveTooLarge':
+    'Die Kopie auf RomM entpackt sich zu weit mehr, als ein Spielstand sein kann, daher wurde sie nicht verwendet.',
   'error.emptyAssetBody': 'Leerer Dateiinhalt',
   'error.credentialsRequired': 'Benutzername und Passwort sind erforderlich',
   'error.tokenRequired': 'Ein API-Token ist erforderlich',
