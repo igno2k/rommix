@@ -5,6 +5,7 @@ import type {
   DriveSpace,
   PowerAction,
   RootLocation,
+  SaveSetupItem,
   Settings
 } from '@shared/types'
 import type { RomMixApp } from '../app.ts'
@@ -183,6 +184,14 @@ export function registerSystemIpc(rommix: RomMixApp, handle: Handle): void {
       notes
     })
 
+    // A failure costs this section of the report, never the rest of it.
+    const saveSetup = await rommix.saveSetup.check().catch((cause: unknown) => {
+      log.error('savesetup', 'could not check the save-relevant emulator settings', cause)
+      return null
+    })
+    const drifted = saveSetup?.filter((item) => item.status === 'off').length ?? 0
+    if (drifted > 0) notes.push(t('diagnostics.saveSetupOff', { count: drifted }))
+
     return {
       flatpakAvailable: hasFlatpak,
       flathubConfigured: hasFlathub,
@@ -190,9 +199,17 @@ export function registerSystemIpc(rommix: RomMixApp, handle: Handle): void {
       romsWritable,
       drives: await drivesOf(await romFolders()),
       logPath: log.path(),
-      notes
+      notes,
+      saveSetup
     }
   })
+
+  /**
+   * Set one emulator setting, which the renderer calls only after the person
+   * confirmed it. Checked against the rules rather than trusted: this crosses
+   * the bridge, and the answer is a write into another program's file.
+   */
+  handle('system:fixSaveSetup', (id: string): Promise<SaveSetupItem[]> => rommix.saveSetup.fix(id))
 
   /** Where RomMix keeps its own files, and where it would by default. */
   handle('system:root', (): RootLocation => ({

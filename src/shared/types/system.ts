@@ -71,4 +71,25 @@ export interface DiagnosticsReport {
   /** The log file, so a bug report can name the file rather than hunt for it. */
   logPath: string
   notes: string[]
+  /**
+   * The emulator settings per-game save sync depends on, or null where no
+   * emulator RomMix checks them for is installed.
+   */
+  saveSetup: SaveSetupItem[] | null
+}
+
+/** One emulator setting that decides whether a game's saves can be synced. */
+export interface SaveSetupItem {
+  id: string
+  /** Absolute path of the file the setting is in. */
+  file: string
+  key: string
+  /** The value there now, or null where the key or the file is absent. */
+  found: string | null
+  /** `off`: not as save sync needs it. */
+  status: 'ok' | 'off'
+  /** The value RomMix would set, on confirmation; null where a person has to change it. */
+  wanted: string | null
+  /** Why it matters, and what to do, in the language RomMix is set to. */
+  reason: string
 }

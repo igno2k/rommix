@@ -284,7 +284,8 @@ archive's files into those folders and touches nothing else on the card.
 Its save states are not synced, as in Argosy: PCSX2 names them after the
 disc's serial rather than the ROM.
 Nothing is written while RetroDECK runs, and every folder changed is copied
-aside first.
+aside first. **System → Pre-flight check** says when the card is not a folder
+card, and how to convert it in PCSX2.
 
 **Games → Downloads → Ask before deleting a downloaded game**, on by default.
 

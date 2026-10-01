@@ -607,6 +607,12 @@ export const fr: Catalog = {
     "RomM n'a pas lu l'identifiant de sauvegarde de ce jeu — le numéro de série ou l'identifiant de disque sous lequel ses sauvegardes sont rangées sur la carte mémoire partagée. Relancez l'analyse de la plateforme avec RomM 5.3 ou plus récent, puis synchronisez à nouveau.",
   'saves.pcsx2NoCard':
     "La carte mémoire de PCSX2 dans l'emplacement 1 n'est pas une carte dossier : les sauvegardes de ce jeu ne peuvent pas être distinguées de celles des autres jeux. Convertissez-la en carte dossier dans les réglages de cartes mémoire de PCSX2. Les états de sauvegarde PS2 ne sont pas synchronisés : PCSX2 les nomme d'après le numéro de série du jeu, et non d'après la ROM.",
+  'saveSetup.pcsx2FolderAutoManage':
+    "PCSX2 ne sépare les sauvegardes de chaque jeu sur une carte dossier que s'il gère la carte jeu par jeu.",
+  'saveSetup.pcsx2CardIsFolder':
+    "La carte mémoire de l'emplacement 1 doit être une carte dossier pour synchroniser les sauvegardes d'un seul jeu. Dans PCSX2, ouvrez Paramètres → Cartes mémoire, sélectionnez la carte, choisissez Convertir puis Dossier, et utilisez la carte convertie pour l'emplacement 1. RomMix ne la convertit jamais : cela déplace les sauvegardes de tous les jeux à la fois.",
+  'saveSetup.pcsx2NoCard':
+    "Il n'y a pas encore de carte mémoire dans l'emplacement 1. Dans PCSX2, ouvrez Paramètres → Cartes mémoire, choisissez Créer puis le type Dossier, et utilisez la nouvelle carte pour l'emplacement 1.",
   'saves.pcsx2':
     "PCSX2 garde une seule carte mémoire partagée par tous les jeux PS2 : aucune sauvegarde n'appartient donc à celui-ci. Les états de sauvegarde PS2 ne sont pas synchronisés : PCSX2 les nomme d'après le numéro de série du jeu, et non d'après la ROM.",
   'saves.dolphin':
@@ -979,6 +985,25 @@ export const fr: Catalog = {
   'system.checkedReady': 'Vérifié — tout a l’air prêt pour jouer',
   'system.checkedProblems_one': 'Vérifié — {count} point à régler',
   'system.checkedProblems_other': 'Vérifié — {count} points à régler',
+  'system.saveSetup': 'Réglages des sauvegardes',
+  'system.saveSetupSetting': '{key} dans {file} : {found}',
+  'system.saveSetupUnset': 'non défini',
+  'system.saveSetupFix': 'Corriger',
+  'system.saveSetupConfirmTitle': "Modifier ce réglage d'émulateur ?",
+  'system.saveSetupConfirmBody':
+    "RomMix va régler {key} sur {wanted} dans {file}, après avoir gardé une copie du fichier dans son propre dossier. Fermez d'abord RetroDECK.",
+  'system.saveSetupConfirm': 'Modifier',
+  'system.saveSetupFixed': 'Réglage modifié',
+  'diagnostics.saveSetupOff_one':
+    "{count} réglage d'émulateur dont dépend la synchronisation des sauvegardes n'est pas bon. Voir Réglages des sauvegardes ci-dessous.",
+  'diagnostics.saveSetupOff_other':
+    "{count} réglages d'émulateur dont dépend la synchronisation des sauvegardes ne sont pas bons. Voir Réglages des sauvegardes ci-dessous.",
+  'diagnostics.saveSetupBusy':
+    "Fermez d'abord RetroDECK et tout jeu : un émulateur en cours réécrit ses réglages en quittant.",
+  'diagnostics.saveSetupNotFixable': "Ce n'est pas un réglage que RomMix peut modifier.",
+  'diagnostics.saveSetupLink': "{file} est un lien, RomMix n'y a pas touché.",
+  'diagnostics.saveSetupNoBackup':
+    "RomMix n'a pas pu garder une copie de {file}, il ne l'a donc pas modifié.",
 
   'change.title': 'Changer l’émulateur qui fait tourner cela ?',
   'change.body':

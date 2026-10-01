@@ -1040,8 +1040,11 @@ const bridge: RomMixBridge = {
         // the panel shows it so a bug report can quote it, and a demo quoting a
         // folder RomMix does not use teaches the wrong one.
         logPath: `${PREVIEW_ROOT}/logs/app.log`,
-        notes: [say('demo.nothingChecked')]
+        notes: [say('demo.nothingChecked')],
+        // No emulator here to have settings.
+        saveSetup: null
       }),
+    fixSaveSetup: () => refuse(),
     root: () =>
       later({
         current: PREVIEW_ROOT,

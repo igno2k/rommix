@@ -216,3 +216,5 @@ export type {
   SavePaths,
   SaveUnit
 } from './savepaths.ts'
+export { checkSaveSetup, saveSetupTarget, setIniValue } from './retrodeck/savesetup.ts'
+export type { SaveSetupFinding, SaveSetupTarget } from './retrodeck/savesetup.ts'

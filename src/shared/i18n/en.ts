@@ -608,6 +608,12 @@ export const en = {
     "RomM has not read this game's save id — the serial or disc id its saves are filed under on the shared memory card. Rescan the platform on RomM 5.3 or later, then sync again.",
   'saves.pcsx2NoCard':
     "PCSX2's memory card in slot 1 is not a folder card, so this game's saves cannot be told apart from the other games' on it. Convert it to a folder card in PCSX2's memory card settings. Save states are not synced for PS2: PCSX2 names them after the game's serial, not the ROM.",
+  'saveSetup.pcsx2FolderAutoManage':
+    "PCSX2 keeps each game's saves apart on a folder card only when it manages the card per game.",
+  'saveSetup.pcsx2CardIsFolder':
+    "The memory card in slot 1 has to be a folder card for one game's saves to be synced. In PCSX2, open Settings → Memory Cards, select the card, choose Convert and then Folder, and use the converted card for Slot 1. RomMix never converts it: that moves every game's saves at once.",
+  'saveSetup.pcsx2NoCard':
+    'There is no memory card in slot 1 yet. In PCSX2, open Settings → Memory Cards, choose Create, pick Folder as the type, and use the new card for Slot 1.',
   'saves.pcsx2':
     "PCSX2 keeps one memory card shared by every PS2 game, so there is no save file that belongs to this one. Save states are not synced for PS2: PCSX2 names them after the game's serial, not the ROM.",
   'saves.dolphin':
@@ -967,6 +973,25 @@ export const en = {
   'system.checkedReady': 'Checked — everything looks ready to play',
   'system.checkedProblems_one': 'Checked — {count} thing to sort out',
   'system.checkedProblems_other': 'Checked — {count} things to sort out',
+  'system.saveSetup': 'Save setup',
+  'system.saveSetupSetting': '{key} in {file}: {found}',
+  'system.saveSetupUnset': 'not set',
+  'system.saveSetupFix': 'Fix',
+  'system.saveSetupConfirmTitle': 'Change this emulator setting?',
+  'system.saveSetupConfirmBody':
+    'RomMix will set {key} to {wanted} in {file}, after keeping a copy of the file in its own folder. Close RetroDECK first.',
+  'system.saveSetupConfirm': 'Change it',
+  'system.saveSetupFixed': 'Setting changed',
+  'diagnostics.saveSetupOff_one':
+    '{count} emulator setting that save sync depends on is off. See Save setup below.',
+  'diagnostics.saveSetupOff_other':
+    '{count} emulator settings that save sync depends on are off. See Save setup below.',
+  'diagnostics.saveSetupBusy':
+    'Close RetroDECK and any game first: an emulator that is running writes its settings back when it exits.',
+  'diagnostics.saveSetupNotFixable': 'That is not a setting RomMix can change.',
+  'diagnostics.saveSetupLink': '{file} is a link, so RomMix left it alone.',
+  'diagnostics.saveSetupNoBackup':
+    'RomMix could not keep a copy of {file}, so it did not change it.',
 
   'change.title': 'Change which emulator runs this?',
   'change.body': 'Each emulator keeps its own files, and nothing moves across when you change one:',

@@ -612,6 +612,12 @@ export const de: Catalog = {
     'RomM hat die Speicher-ID dieses Spiels nicht gelesen – die Seriennummer oder Disc-ID, unter der seine Spielstände auf der gemeinsamen Memory Card abgelegt sind. Scanne die Plattform mit RomM 5.3 oder neuer erneut und synchronisiere dann noch einmal.',
   'saves.pcsx2NoCard':
     'Die Memory Card von PCSX2 in Slot 1 ist keine Ordner-Karte, deshalb lassen sich die Spielstände dieses Spiels nicht von denen der anderen Spiele trennen. Wandle sie in den Memory-Card-Einstellungen von PCSX2 in eine Ordner-Karte um. Savestates werden für PS2 nicht synchronisiert: PCSX2 benennt sie nach der Seriennummer des Spiels, nicht nach dem ROM.',
+  'saveSetup.pcsx2FolderAutoManage':
+    'PCSX2 trennt die Spielstände der einzelnen Spiele auf einer Ordner-Karte nur, wenn es die Karte pro Spiel verwaltet.',
+  'saveSetup.pcsx2CardIsFolder':
+    'Die Memory Card in Slot 1 muss eine Ordner-Karte sein, damit die Spielstände eines einzelnen Spiels synchronisiert werden können. Öffne in PCSX2 Einstellungen → Memory Cards, wähle die Karte, dann Konvertieren und Ordner, und verwende die konvertierte Karte für Slot 1. RomMix konvertiert sie nie, weil dabei die Spielstände aller Spiele auf einmal verschoben werden.',
+  'saveSetup.pcsx2NoCard':
+    'In Slot 1 steckt noch keine Memory Card. Öffne in PCSX2 Einstellungen → Memory Cards, wähle Erstellen und als Typ Ordner, und verwende die neue Karte für Slot 1.',
   'saves.pcsx2':
     'PCSX2 führt eine einzige Memory Card für alle PS2-Spiele, deshalb gehört keine Speicherdatei zu diesem einen Spiel. Savestates werden für PS2 nicht synchronisiert: PCSX2 benennt sie nach der Seriennummer des Spiels, nicht nach dem ROM.',
   'saves.dolphin':
@@ -990,6 +996,25 @@ export const de: Catalog = {
   'system.checkedReady': 'Geprüft — alles sieht spielbereit aus',
   'system.checkedProblems_one': 'Geprüft — {count} Sache zu erledigen',
   'system.checkedProblems_other': 'Geprüft — {count} Sachen zu erledigen',
+  'system.saveSetup': 'Speicher-Einrichtung',
+  'system.saveSetupSetting': '{key} in {file}: {found}',
+  'system.saveSetupUnset': 'nicht gesetzt',
+  'system.saveSetupFix': 'Beheben',
+  'system.saveSetupConfirmTitle': 'Diese Emulator-Einstellung ändern?',
+  'system.saveSetupConfirmBody':
+    'RomMix setzt {key} in {file} auf {wanted} und legt vorher eine Kopie der Datei im eigenen Ordner an. Schließe zuerst RetroDECK.',
+  'system.saveSetupConfirm': 'Ändern',
+  'system.saveSetupFixed': 'Einstellung geändert',
+  'diagnostics.saveSetupOff_one':
+    '{count} Emulator-Einstellung, von der die Spielstand-Synchronisierung abhängt, stimmt nicht. Siehe Speicher-Einrichtung unten.',
+  'diagnostics.saveSetupOff_other':
+    '{count} Emulator-Einstellungen, von denen die Spielstand-Synchronisierung abhängt, stimmen nicht. Siehe Speicher-Einrichtung unten.',
+  'diagnostics.saveSetupBusy':
+    'Schließe zuerst RetroDECK und jedes Spiel: Ein laufender Emulator schreibt seine Einstellungen beim Beenden zurück.',
+  'diagnostics.saveSetupNotFixable': 'Diese Einstellung kann RomMix nicht ändern.',
+  'diagnostics.saveSetupLink': '{file} ist ein Link, deshalb hat RomMix die Datei nicht angefasst.',
+  'diagnostics.saveSetupNoBackup':
+    'RomMix konnte keine Kopie von {file} anlegen und hat die Datei daher nicht geändert.',
 
   'change.title': 'Den Emulator wechseln, der das ausführt?',
   'change.body':

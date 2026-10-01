@@ -29,6 +29,7 @@ import type {
   SaveDeleteScope,
   SavePushPreview,
   SavesWaiting,
+  SaveSetupItem,
   SaveSyncResult,
   Settings,
   AuthMode
@@ -379,6 +380,12 @@ export interface RomMixBridge {
     runEmulator(id: string): Promise<string>
     onInstallProgress(listener: (progress: EmulatorInstallProgress) => void): () => void
     diagnostics(): Promise<DiagnosticsReport>
+    /**
+     * Set one emulator setting to what save sync needs — only ever after the
+     * person confirmed it. Refused while the emulator runs. Resolves with every
+     * setting as it stands afterwards.
+     */
+    fixSaveSetup(id: string): Promise<SaveSetupItem[]>
     /**
      * How much room is left on each drive downloads go to.
      *

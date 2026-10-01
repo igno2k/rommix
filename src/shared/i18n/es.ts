@@ -600,6 +600,12 @@ export const es: Catalog = {
     'RomM no ha leído el identificador de guardado de este juego: el número de serie o de disco con el que se archivan sus partidas en la tarjeta de memoria compartida. Vuelve a escanear la plataforma con RomM 5.3 o posterior y sincroniza de nuevo.',
   'saves.pcsx2NoCard':
     'La tarjeta de memoria de PCSX2 en la ranura 1 no es una tarjeta de carpeta, así que las partidas de este juego no se pueden separar de las de los demás. Conviértela en tarjeta de carpeta en los ajustes de tarjetas de memoria de PCSX2. Los estados guardados de PS2 no se sincronizan: PCSX2 los nombra según el número de serie del juego, no según la ROM.',
+  'saveSetup.pcsx2FolderAutoManage':
+    'PCSX2 solo separa las partidas de cada juego en una tarjeta de carpeta si gestiona la tarjeta juego a juego.',
+  'saveSetup.pcsx2CardIsFolder':
+    'La tarjeta de memoria de la ranura 1 tiene que ser de carpeta para sincronizar las partidas de un solo juego. En PCSX2, abre Ajustes → Tarjetas de memoria, selecciona la tarjeta, elige Convertir y luego Carpeta, y usa la tarjeta convertida en la ranura 1. RomMix nunca la convierte: eso mueve las partidas de todos los juegos a la vez.',
+  'saveSetup.pcsx2NoCard':
+    'Todavía no hay ninguna tarjeta de memoria en la ranura 1. En PCSX2, abre Ajustes → Tarjetas de memoria, elige Crear y el tipo Carpeta, y usa la tarjeta nueva en la ranura 1.',
   'saves.pcsx2':
     'PCSX2 mantiene una sola tarjeta de memoria compartida por todos los juegos de PS2, así que no hay ninguna partida guardada que pertenezca a este. Los estados guardados de PS2 no se sincronizan: PCSX2 los nombra según el número de serie del juego, no según la ROM.',
   'saves.dolphin':
@@ -969,6 +975,25 @@ export const es: Catalog = {
   'system.checkedReady': 'Comprobado — todo parece listo para jugar',
   'system.checkedProblems_one': 'Comprobado — {count} cosa por resolver',
   'system.checkedProblems_other': 'Comprobado — {count} cosas por resolver',
+  'system.saveSetup': 'Ajustes de guardado',
+  'system.saveSetupSetting': '{key} en {file}: {found}',
+  'system.saveSetupUnset': 'sin definir',
+  'system.saveSetupFix': 'Corregir',
+  'system.saveSetupConfirmTitle': '¿Cambiar este ajuste del emulador?',
+  'system.saveSetupConfirmBody':
+    'RomMix pondrá {key} a {wanted} en {file}, después de guardar una copia del archivo en su propia carpeta. Cierra antes RetroDECK.',
+  'system.saveSetupConfirm': 'Cambiarlo',
+  'system.saveSetupFixed': 'Ajuste cambiado',
+  'diagnostics.saveSetupOff_one':
+    '{count} ajuste de emulador del que depende la sincronización de partidas no está bien. Mira Ajustes de guardado más abajo.',
+  'diagnostics.saveSetupOff_other':
+    '{count} ajustes de emulador de los que depende la sincronización de partidas no están bien. Mira Ajustes de guardado más abajo.',
+  'diagnostics.saveSetupBusy':
+    'Cierra antes RetroDECK y cualquier juego: un emulador en marcha vuelve a escribir sus ajustes al salir.',
+  'diagnostics.saveSetupNotFixable': 'Ese no es un ajuste que RomMix pueda cambiar.',
+  'diagnostics.saveSetupLink': '{file} es un enlace, así que RomMix no lo tocó.',
+  'diagnostics.saveSetupNoBackup':
+    'RomMix no pudo guardar una copia de {file}, así que no lo cambió.',
 
   'change.title': '¿Cambiar el emulador que ejecuta esto?',
   'change.body': 'Cada emulador guarda sus propios archivos, y al cambiar no se mueve ninguno:',

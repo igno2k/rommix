@@ -112,9 +112,18 @@ export function pcsx2Card(
   memcards: string,
   env: SaveContext['env']
 ): string | null {
-  const ini = configDir ? env.text(joinPath(configDir, PCSX2_INI)) : null
-  const dir = joinPath(memcards, iniValue(ini, 'MemoryCards', 'Slot1_Filename') || 'Mcd001.ps2')
+  const dir = pcsx2Slot1(configDir, memcards, env)
   return env.exists(joinPath(dir, PS2_SUPERBLOCK)) ? dir : null
+}
+
+/** Where the card in slot 1 is, whether or not there is one yet. See `pcsx2Card`. */
+export function pcsx2Slot1(
+  configDir: string | null,
+  memcards: string,
+  env: SaveContext['env']
+): string {
+  const ini = configDir ? env.text(joinPath(configDir, PCSX2_INI)) : null
+  return joinPath(memcards, iniValue(ini, 'MemoryCards', 'Slot1_Filename') || 'Mcd001.ps2')
 }
 
 export const RETRODECK_COMPONENTS: Readonly<Record<string, ComponentSaves>> = {

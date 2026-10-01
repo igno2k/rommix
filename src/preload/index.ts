@@ -144,6 +144,7 @@ const bridge: RomMixBridge = {
     onInstallProgress: (listener: (progress: EmulatorInstallProgress) => void) =>
       subscribe<EmulatorInstallProgress>('emulators:progress', listener),
     diagnostics: () => ipcRenderer.invoke('system:diagnostics'),
+    fixSaveSetup: (id: string) => ipcRenderer.invoke('system:fixSaveSetup', id),
     drives: () => ipcRenderer.invoke('system:drives'),
     root: () => ipcRenderer.invoke('system:root'),
     setRoot: (path: string) => ipcRenderer.invoke('system:setRoot', path),
