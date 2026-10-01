@@ -77,6 +77,7 @@ interface ContextOptions {
   dataDir?: string | null
   installDir?: string | null
   variant?: string
+  saveTarget?: string | null
   env?: SaveEnvironment
 }
 
@@ -100,6 +101,7 @@ function context(options: ContextOptions): SaveContext {
     dataDir: options.dataDir ?? null,
     installDir: options.installDir ?? null,
     variant: options.variant,
+    saveTarget: options.saveTarget,
     env: options.env ?? machine({})
   }
 }
@@ -1387,4 +1389,109 @@ test('every RetroDECK save layout is one a command label reaches', () => {
     [],
     'a save layout no label reaches: name it in COMPONENT_BY_LABEL, or drop the row'
   )
+})
+
+// ---------------------------------------------------------------------------
+// RetroDECK PCSX2: one game's folders on the folder card every game shares
+// ---------------------------------------------------------------------------
+
+const RD = '/home/deck/retrodeck'
+const RD_CONFIG = '/var/rd/config'
+const MEMCARDS = `${RD}/saves/ps2/pcsx2/memcards`
+const PCSX2_INI = `${RD_CONFIG}/PCSX2/inis/PCSX2.ini`
+const CARD = `${MEMCARDS}/Mcd001.ps2`
+
+/** A PS2 ROM on RetroDECK, its card folder and whatever else a test lays out. */
+function onCard(options: {
+  saveTarget?: string | null
+  files?: Record<string, string>
+}): SavePaths {
+  return resolve(retrodeck, {
+    romPath: `${RD}/roms/ps2/Ratchet & Clank - Going Commando (USA).chd`,
+    system: 'ps2',
+    configDir: RD_CONFIG,
+    saveTarget: options.saveTarget === undefined ? 'BASCUS-97268' : options.saveTarget,
+    paths: { home: RD, roms: `${RD}/roms`, saves: `${RD}/saves`, states: `${RD}/states` },
+    env: machine({
+      files: {
+        '/var/rd/config/retroarch/retroarch.cfg': RETRODECK_CFG,
+        ...(options.files ?? { [`${CARD}/_pcsx2_superblock`]: 'superblock' })
+      }
+    })
+  })
+}
+
+test('RetroDECK PCSX2: the game owns its folders on the card slot 1 names', () => {
+  const paths = onCard({
+    saveTarget: 'SLUS-20152',
+    files: {
+      [PCSX2_INI]: '[MemoryCards]\nSlot1_Filename = Mine.ps2\n',
+      [`${MEMCARDS}/Mine.ps2/_pcsx2_superblock`]: 'superblock',
+      [`${CARD}/_pcsx2_superblock`]: 'superblock'
+    }
+  })
+  assert.equal(paths.saves?.match, 'unit')
+  assert.equal(paths.saves?.dir, `${MEMCARDS}/Mine.ps2`)
+  assert.equal(paths.saves?.unit?.owns('BASLUS-20152AC04', 'dir'), true)
+  assert.equal(paths.saves?.unit?.owns('_pcsx2_superblock', 'file'), false)
+  assert.deepEqual(paths.saves?.unit?.busyWhile, {
+    name: 'RetroDECK',
+    appId: 'net.retrodeck.retrodeck',
+    programs: ['pcsx2-qt']
+  })
+  assert.equal(paths.states?.match, 'rom-stem')
+  assert.equal(paths.emulator, 'pcsx2')
+  assert.equal(paths.unsyncableReason, undefined)
+})
+
+test('RetroDECK PCSX2: without the ini, or the key in it, slot 1 is Mcd001.ps2 as in PCSX2', () => {
+  for (const ini of [undefined, '[MemoryCards]\nSlot1_Enable = true\n']) {
+    const files: Record<string, string> = {
+      [`${CARD}/_pcsx2_superblock`]: 'superblock',
+      [`${MEMCARDS}/Other.ps2/_pcsx2_superblock`]: 'superblock'
+    }
+    if (ini) files[PCSX2_INI] = ini
+    assert.equal(onCard({ files }).saves?.dir, CARD)
+  }
+})
+
+test('RetroDECK PCSX2: the card folder is the one [Folders] MemoryCards names, as in PCSX2', () => {
+  // Absolute as it is; relative below PCSX2's data folder, the one `inis` is in.
+  for (const [named, folder] of [
+    ['/run/media/deck/sd/memcards', '/run/media/deck/sd/memcards'],
+    ['cards', `${RD_CONFIG}/PCSX2/cards`]
+  ]) {
+    const paths = onCard({
+      files: {
+        [PCSX2_INI]: `[Folders]\nMemoryCards = ${named}\n`,
+        [`${folder}/Mcd001.ps2/_pcsx2_superblock`]: 'superblock',
+        [`${CARD}/_pcsx2_superblock`]: 'superblock'
+      }
+    })
+    assert.equal(paths.saves?.dir, `${folder}/Mcd001.ps2`, named)
+  }
+})
+
+test('RetroDECK PCSX2: a slot 1 card that is not a folder card is said and not synced', () => {
+  const layouts: Record<string, string>[] = [
+    { [PCSX2_INI]: '[MemoryCards]\nSlot1_Filename = Mcd001.ps2\n', [CARD]: 'an 8 MB image' },
+    // Another folder card is not the one PCSX2 has in slot 1.
+    { [`${MEMCARDS}/Other.ps2/_pcsx2_superblock`]: 'superblock' }
+  ]
+  for (const files of layouts) {
+    const paths = onCard({ files })
+    assert.equal(paths.saves?.match, 'shared')
+    assert.equal(paths.saves?.dir, MEMCARDS)
+    assert.equal(paths.unsyncableReason, 'saves.pcsx2NoCard')
+  }
+  assert.match(localize('saves.pcsx2NoCard', ENGLISH) ?? '', /folder card/)
+})
+
+test('RetroDECK PCSX2: a folder card but no key from RomM is not guessed at', () => {
+  for (const saveTarget of [null, '  ', 'not a serial']) {
+    const paths = onCard({ saveTarget })
+    assert.equal(paths.saves?.match, 'shared', String(saveTarget))
+    assert.equal(paths.unsyncableReason, 'saves.noSaveTarget')
+  }
+  assert.match(localize('saves.noSaveTarget', ENGLISH) ?? '', /RomM 5\.3/)
 })

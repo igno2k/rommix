@@ -277,6 +277,15 @@ Saves named after the ROM sync cleanly, and Switch-family saves are matched by
 title id. Emulators that share one memory card between every game cannot be
 synced, and RomMix says so rather than uploading the wrong data.
 
+RetroDECK's PCSX2 is the exception, when slot 1 holds a folder memory card. A
+game's own save folders on it — found by the serial RomM 5.3 reads out of the
+disc — travel as one zip, the same one Argosy uploads, and a pull writes the
+archive's files into those folders and touches nothing else on the card.
+Its save states are not synced, as in Argosy: PCSX2 names them after the
+disc's serial rather than the ROM.
+Nothing is written while RetroDECK runs, and every folder changed is copied
+aside first.
+
 **Games → Downloads → Ask before deleting a downloaded game**, on by default.
 
 **System → Pre-flight check.** Whether `flatpak` and Flathub are there, whether

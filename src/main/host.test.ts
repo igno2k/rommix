@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { after, test } from 'node:test'
+import { after, describe, mock, test } from 'node:test'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,11 +15,14 @@ import {
   flathubConfigured,
   installFlatpak,
   isWritable,
+  runningIn,
+  runningOf,
   killFlatpakApp,
   killProcessTree,
   signalProcessGroup,
   stopFlatpakApp
 } from './host.ts'
+import { log } from './log.ts'
 
 /**
  * What RomMix can ask the machine without starting a subprocess: reading a
@@ -521,4 +524,51 @@ test('signalling a group nothing is left in is not an error', async () => {
   await new Promise((resolve) => gone.on('exit', resolve))
 
   assert.equal(signalProcessGroup(pid, 'SIGTERM'), false)
+})
+
+describe('what of RetroDECK is running', () => {
+  const busy = { appId: 'net.retrodeck.retrodeck', programs: ['pcsx2-qt'] }
+  // What a PS2 game looks like from outside: `flatpak run` has become `bwrap`,
+  // and nothing below it names the flatpak.
+  const PLAYING = [
+    '  100 bwrap --args 42 retrodeck -s ps2 /roms/ps2/game.chd',
+    '  200 /app/bin/retrodeck -s ps2 /roms/ps2/game.chd',
+    '  300 /app/bin/pcsx2-qt -batch -fullscreen /roms/ps2/game.chd',
+    '  400 /tmp/.mount_RomMix/rommix --pcsx2-qt'
+  ].join('\n')
+
+  test('flatpak listing the app is enough', () => {
+    assert.deepEqual(runningIn('org.other.App\nnet.retrodeck.retrodeck\n', '', busy, 400), [
+      'flatpak net.retrodeck.retrodeck'
+    ])
+  })
+
+  test('the emulator in the process table is enough, by what runs and never as this process', () => {
+    assert.deepEqual(runningIn('', PLAYING, busy, 400), [
+      '300 /app/bin/pcsx2-qt -batch -fullscreen /roms/ps2/game.chd'
+    ])
+  })
+
+  test('where flatpak cannot be asked, the process table still answers', () => {
+    assert.deepEqual(runningIn(null, PLAYING, busy, 400).length, 1)
+  })
+
+  test('where neither listing can be had, the write goes ahead and the log says why', async () => {
+    const warn = mock.method(log, 'warn', () => undefined)
+    process.env.PATH = '/nonexistent/rommix/bin'
+    try {
+      assert.deepEqual(await runningOf({ name: 'RetroDECK', ...busy }), [])
+      assert.equal(warn.mock.callCount(), 1)
+      assert.equal(warn.mock.calls[0].arguments[2]?.appId, 'net.retrodeck.retrodeck')
+    } finally {
+      process.env.PATH = pathBefore
+      warn.mock.restore()
+    }
+  })
+
+  test('nothing of it running is nothing', () => {
+    const idle = '  1 /sbin/init\n  400 /tmp/.mount_RomMix/rommix --check net.retrodeck.retrodeck'
+    assert.deepEqual(runningIn('org.other.App\n', idle, busy, 400), [])
+    assert.deepEqual(runningIn(null, '', busy, 400), [])
+  })
 })

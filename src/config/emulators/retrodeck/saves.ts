@@ -1,8 +1,11 @@
 import type { Text } from '@shared/i18n'
 import { coreForSystem } from '../../systems.ts'
+import { iniValue } from '../ini.ts'
 import { libretroSavePaths, readLibretroConfig, LIBRETRO_TAG } from '../libretro.ts'
-import { baseName, directory, joinPath, perRom, shared } from '../savepaths.ts'
-import type { SaveContext, SaveLocation, SavePaths } from '../savepaths.ts'
+import { baseName, directory, joinPath, perRom, shared, unit } from '../savepaths.ts'
+import type { BusyWhile, SaveContext, SaveLocation, SavePaths } from '../savepaths.ts'
+import { ps2Unit, PS2_SUPERBLOCK } from '../units/ps2.ts'
+import { RETRODECK_APP_ID } from './appid.ts'
 
 /**
  * Where RetroDECK's bundled emulators keep their saves.
@@ -40,11 +43,11 @@ function at(path: string | null, make: (dir: string) => SaveLocation): SaveLocat
 /**
  * The memory-card emulators.
  *
- * PCSX2 and DuckStation are both configured by RetroDECK with *shared* cards —
- * `shared_card_1.mcd`, `Mcd001.ps2` — rather than one per game. Their save
- * states are per-game and are synced; the cards are not, because a card holds
- * every PS1 or PS2 game the user has played and uploading it under one game's
- * id would attach the lot to that game.
+ * DuckStation is configured by RetroDECK with a *shared* card,
+ * `shared_card_1.mcd`, rather than one per game. Its save states are per-game
+ * and are synced; the card is not, because it holds every PS1 game the user
+ * has played and uploading it under one game's id would attach the lot to
+ * that game.
  */
 function cardEmulator(component: string, reason: Text): ComponentSaves {
   return (ctx) => ({
@@ -54,8 +57,92 @@ function cardEmulator(component: string, reason: Text): ComponentSaves {
   })
 }
 
+/**
+ * What has to be closed before PCSX2's card or settings are written: RetroDECK,
+ * and the PCSX2 it runs. `flatpak run` execs into `bwrap`, so the flatpak's id
+ * is on the command line of the frontend it started and not of the emulator,
+ * which runs as `pcsx2-qt` (RetroDECK's `pcsx2/component_launcher.sh`).
+ */
+export const PCSX2_BUSY: BusyWhile = {
+  name: 'RetroDECK',
+  appId: RETRODECK_APP_ID,
+  programs: ['pcsx2-qt']
+}
+
+/** PCSX2's `PCSX2.ini`, below the flatpak's config root. */
+export const PCSX2_INI = 'PCSX2/inis/PCSX2.ini'
+
+/**
+ * The folder PCSX2 keeps its memory cards in: `[Folders] MemoryCards` in
+ * `PCSX2.ini`, below PCSX2's data folder — the one `inis` is in — where it is
+ * relative, as PCSX2 reads it (`LoadPathFromSettings`, `pcsx2/Pcsx2Config.cpp`,
+ * v2.6.3, :2272-2278, :2285). Where the key is absent, `derived`: where
+ * RetroDECK puts it.
+ */
+export function pcsx2Memcards(
+  configDir: string | null,
+  derived: string | null,
+  env: SaveContext['env']
+): string | null {
+  const ini = configDir ? env.text(joinPath(configDir, PCSX2_INI)) : null
+  const folder = iniValue(ini, 'Folders', 'MemoryCards')
+  if (!folder || !configDir) return derived
+  return folder.startsWith('/') ? folder : joinPath(configDir, 'PCSX2', folder)
+}
+
+/**
+ * The folder memory card PCSX2 has in slot 1, or null where that card is not
+ * a folder card.
+ *
+ * A folder card is a directory holding PCSX2's `_pcsx2_superblock` beside one
+ * folder per save, which is what lets one game's saves be told apart at all.
+ * The card is the one `[MemoryCards] Slot1_Filename` names in `PCSX2.ini`, or
+ * `Mcd001.ps2` where it names none, as PCSX2 reads it
+ * (`Pcsx2Config::LoadSaveMemcards`, `pcsx2/Pcsx2Config.cpp`, v2.6.3, :2041;
+ * the default from `FileMcd_GetDefaultName`, `MemoryCardFile.cpp` :244-250).
+ *
+ * A card that is still a single `.ps2` image is reported rather than
+ * converted: that is a migration of every game's saves at once, and PCSX2's
+ * own memory-card settings do it. Argosy has the same requirement: "PS2 sync
+ * works with folder-type memory cards only"
+ * (https://github.com/rommapp/argosy-launcher/wiki/Save-Sync).
+ */
+export function pcsx2Card(
+  configDir: string | null,
+  memcards: string,
+  env: SaveContext['env']
+): string | null {
+  const ini = configDir ? env.text(joinPath(configDir, PCSX2_INI)) : null
+  const dir = joinPath(memcards, iniValue(ini, 'MemoryCards', 'Slot1_Filename') || 'Mcd001.ps2')
+  return env.exists(joinPath(dir, PS2_SUPERBLOCK)) ? dir : null
+}
+
 export const RETRODECK_COMPONENTS: Readonly<Record<string, ComponentSaves>> = {
-  pcsx2: cardEmulator('pcsx2', 'saves.retrodeckPcsx2'),
+  /**
+   * PCSX2's saves are the game's own folders on the folder card in slot 1.
+   * Without RomM's `save_target` nothing on the card can be told to be this
+   * game's. Its states are looked for by the ROM's name and none are found:
+   * PCSX2 names them `<serial> (<CRC>).<slot>.p2s`. Argosy does not sync PS2
+   * states either.
+   */
+  pcsx2: (ctx) => {
+    const states = at(under(statesRoot(ctx), ctx.system, 'pcsx2'), (dir) => perRom(dir))
+    const memcards = pcsx2Memcards(
+      ctx.configDir,
+      under(savesRoot(ctx), ctx.system, 'pcsx2', 'memcards'),
+      ctx.env
+    )
+    if (!memcards) return { saves: null, states }
+    const card = pcsx2Card(ctx.configDir, memcards, ctx.env)
+    if (!card) return { saves: shared(memcards), states, unsyncableReason: 'saves.pcsx2NoCard' }
+    const key = ctx.saveTarget?.trim()
+    const rule = key ? ps2Unit(key) : null
+    if (!rule) return { saves: shared(memcards), states, unsyncableReason: 'saves.noSaveTarget' }
+    return {
+      saves: unit(card, { ...rule, busyWhile: PCSX2_BUSY }),
+      states
+    }
+  },
   duckstation: cardEmulator('duckstation', 'saves.retrodeckDuckstation'),
 
   /**

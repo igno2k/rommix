@@ -5,7 +5,7 @@ import type { SaveProgress } from '@shared/api'
 import { localize } from '@shared/i18n'
 import { changedAt, mayBeSentUnasked, AUTOSAVE_SLOT } from '@shared/saveassets'
 import { SAVE_CONVENTIONS, emulatorById } from '@config/emulators'
-import type { SaveContext, SaveLocation, SavePaths } from '@config/emulators'
+import type { BusyWhile, SaveContext, SaveLocation, SavePaths, SaveUnit } from '@config/emulators'
 import type {
   EmulatorState,
   PendingSave,
@@ -20,6 +20,8 @@ import type {
   SaveSyncState
 } from '@shared/types'
 import { partialPathOf, refusedUs, verify } from './romm/index.ts'
+import { hashOf } from './integrity.ts'
+import { runningOf } from './host.ts'
 import { safeJoin } from './safepath.ts'
 import type { RommClient } from './romm/index.ts'
 import type { Store } from './store.ts'
@@ -53,7 +55,8 @@ import {
   slotToSend
 } from './savepairing.ts'
 import { progressRun, type SaveRun } from './saveprogress.ts'
-import { extractZip, zipDirectory } from './zip.ts'
+import { findUnit, removeUnit, restoreUnit } from './saveunits.ts'
+import { extractZip, membersContentHash, zipContentHash, zipDirectory, zipMembers } from './zip.ts'
 
 /**
  * Two-way save and save-state sync between RomM and the local emulator tree.
@@ -79,6 +82,10 @@ import { extractZip, zipDirectory } from './zip.ts'
  *  - `shared`     a memory card or NAND every game writes to. Skipped, with a
  *                 reason the buttons can show, rather than uploading one game's
  *                 card under another game's id.
+ *  - `unit`       a card every game writes to, where the descriptor can still
+ *                 name the game's own entries. Only those are carried, as one
+ *                 zip of them, and a pull replaces only those; see
+ *                 `saveunits.ts`.
  *
  * RomM records which emulator produced each save, and both directions use the
  * same answer for what this device is — `localTag` — so a RetroArch `.srm` is
@@ -161,6 +168,13 @@ interface LocalAsset {
   mtimeMs: number
   /** True when `path` is a directory to be archived rather than a file. */
   isDirectory?: boolean
+  /**
+   * The game's entries in a shared folder, when this asset is a unit. `path`
+   * is then a name inside `dir` that nothing is ever written to — what the
+   * renderer echoes back to pick the asset — and every read and write goes
+   * through the members instead.
+   */
+  unit?: { dir: string; members: readonly string[] }
 }
 
 /** One kind's files, ready to go, with what sending them needs. */
@@ -211,8 +225,30 @@ export class SaveSync {
     private readonly store: Store,
     private readonly client: RommClient,
     /** Where the saves a pull displaces are kept, one folder per game. */
-    private readonly backups: string
+    private readonly backups: string,
+    /** What of an install is running — see `SaveUnit.busyWhile`. */
+    private readonly running: (busy: BusyWhile) => Promise<string[]> = runningOf
   ) {}
+
+  /**
+   * Refuse to write a unit while what it names is running.
+   *
+   * Thrown rather than counted: whoever asked — the Pull button, the delete on
+   * the Saves tab, the pull before a launch — says the reason as it is, and a
+   * launch goes ahead without it. Asked just before the first write, so a pull
+   * with nothing to bring down is not refused for it.
+   */
+  private async ensureUnitIdle(unit: SaveUnit, romId: number): Promise<void> {
+    if (!unit.busyWhile) return
+    const hits = await this.running(unit.busyWhile)
+    if (hits.length === 0) return
+    log.warn('saves', 'left a shared save folder alone while its emulator runs', {
+      romId,
+      key: unit.key,
+      running: hits
+    })
+    throw new Error(t('error.unitBusy', { name: unit.busyWhile.name }))
+  }
 
   // -- where a game's saves are, and how the two ends compare --------------
 
@@ -250,6 +286,7 @@ export class SaveSync {
       dataDir: target.emulator.dataDir,
       installDir: target.emulator.install?.location ?? null,
       variant: target.variant,
+      saveTarget: target.rom.save_target ?? null,
       env: this.env
     }
 
@@ -302,6 +339,16 @@ export class SaveSync {
     return !(kind === 'save' && location.match === 'rom-stem')
   }
 
+  /**
+   * The tags a pull of this kind also takes: the descriptor's, and for a unit
+   * the ones other clients upload the same files under — see
+   * `SaveUnit.alsoAccepts`.
+   */
+  private alsoAcceptedFor(paths: SavePaths, kind: 'save' | 'state'): readonly string[] {
+    const unit = kind === 'save' ? paths.saves?.unit : undefined
+    return [...(paths.alsoAccepts ?? []), ...(unit?.alsoAccepts ?? [])]
+  }
+
   /** The tag this device uploads under — see `localTag` in `savefiles.ts`. */
   private tagFor(paths: SavePaths, target: SaveTarget): string {
     return localTag(paths, target.emulator.id)
@@ -344,6 +391,10 @@ export class SaveSync {
     since = 0
   ): Promise<LocalAsset[]> {
     const stem = romStemOf(rom, romPath)
+
+    if (location.match === 'unit' && location.unit) {
+      return this.findUnitAsset(location.dir, location.unit, stem, since)
+    }
 
     // A directory save is one asset: the folder itself, named after the game so
     // the server has something readable to show.
@@ -401,6 +452,61 @@ export class SaveSync {
   }
 
   /**
+   * Does this asset hold what RomM's `content_hash` describes?
+   *
+   * A unit is compared by its contents, the way RomM hashes an archive — see
+   * `zipContentHash` — which a folder save cannot be: its archive is of the
+   * whole folder, and nothing about it is known until it is built.
+   */
+  private async sameAsRemote(asset: LocalAsset, hash: string | null): Promise<boolean> {
+    if (!hash) return false
+    if (asset.unit) {
+      const local = await membersContentHash(asset.unit.dir, asset.unit.members)
+      return local !== null && local === hash.toLowerCase()
+    }
+    return !asset.isDirectory && sameContent(asset.path, hash)
+  }
+
+  /**
+   * A game's entries in a shared folder, as the one asset they travel as.
+   *
+   * A zip named after the ROM. Nothing about the server copy's name identifies
+   * the save anyway: RomM stamps every copy it files into a slot, and a unit is
+   * always the slot holder.
+   */
+  private async findUnitAsset(
+    dir: string,
+    unit: SaveUnit,
+    stem: string,
+    since: number
+  ): Promise<LocalAsset[]> {
+    const found = await findUnit(dir, unit)
+    if (found.members.length === 0 || found.newest <= since) return []
+    const fileName = `${stem}.zip`
+    return [
+      {
+        path: join(dir, fileName),
+        fileName,
+        mtimeMs: found.newest,
+        isDirectory: true,
+        unit: { dir, members: found.members }
+      }
+    ]
+  }
+
+  /** How big an asset is, a unit being the sum of its members. */
+  private async assetSize(asset: LocalAsset): Promise<number> {
+    if (!asset.unit) return sizeOf(asset.path, asset.isDirectory === true)
+    let total = 0
+    for (const member of asset.unit.members) {
+      const path = join(asset.unit.dir, member)
+      const info = await stat(path).catch(() => null)
+      if (info) total += await sizeOf(path, info.isDirectory())
+    }
+    return total
+  }
+
+  /**
    * How the two copies of one file compare, asking the bytes where it matters.
    *
    * `syncStateOf` weighs a local mtime against a stamp another machine wrote,
@@ -437,13 +543,13 @@ export class SaveSync {
     fromThisDevice: boolean | null
   ): Promise<SaveSyncState> {
     const state = syncStateOf(local?.mtimeMs ?? null, item.updated_at, fromThisDevice)
-    if (!local || local.isDirectory) return state
+    if (!local || (local.isDirectory && !local.unit)) return state
 
     const hash = contentHashOf(item)
     if (state === 'synced' && (hash === null || timesAgree(local.mtimeMs, item.updated_at))) {
       return state
     }
-    if (hash !== null && (await sameContent(local.path, hash))) return 'synced'
+    if (hash !== null && (await this.sameAsRemote(local, hash))) return 'synced'
 
     // Different bytes, so the inference does not hold. Asked again without it,
     // which leaves the clocks — and they say the copy on the server is the
@@ -473,6 +579,10 @@ export class SaveSync {
     target: SaveTarget
   ): string | null {
     if (kind === 'state') return null
+    // A unit is the slot holder by definition: it is the game's whole save on
+    // that card, and the slot is what every client pairs it on.
+    const unit = local.find((asset) => asset.unit !== undefined)
+    if (unit) return unit.fileName
     return primarySave(
       local.filter((asset) => !asset.isDirectory).map((asset) => asset.fileName),
       romStemOf(target.rom, target.romPath)
@@ -539,7 +649,7 @@ export class SaveSync {
     let primary: string | null = null
     let primaryKey: string | null = null
     let tag: string | null = null
-    let alsoAccepts: readonly string[] = []
+    const alsoAccepts: Record<'save' | 'state', readonly string[]> = { save: [], state: [] }
     /**
      * The kinds a pull judges by the tag — see `tagDecides`.
      *
@@ -552,8 +662,8 @@ export class SaveSync {
     if (local) {
       const paths = this.locate(local)
       tag = this.tagFor(paths, local)
-      alsoAccepts = paths.alsoAccepts ?? []
       for (const kind of ['save', 'state'] as const) {
+        alsoAccepts[kind] = this.alsoAcceptedFor(paths, kind)
         const location = this.locationFor(paths, kind)
         if (!location) continue
         byTag[kind] = this.tagDecides(kind, location)
@@ -635,7 +745,7 @@ export class SaveSync {
         sizeBytes: item.file_size_bytes,
         emulator: item.emulator,
         forAnotherEmulator:
-          byTag[kind] && tag !== null && !acceptsTag(tag, item.emulator, alsoAccepts),
+          byTag[kind] && tag !== null && !acceptsTag(tag, item.emulator, alsoAccepts[kind]),
         localPath: localFile?.path ?? null,
         localModifiedAt: localFile ? new Date(localFile.mtimeMs).toISOString() : null,
         fromThisDevice,
@@ -658,7 +768,7 @@ export class SaveSync {
         // happened, and blanking either would blank exactly the rows a person
         // opened this screen to send.
         slot: key === primaryKey ? AUTOSAVE_SLOT : null,
-        sizeBytes: await sizeOf(file.path, file.isDirectory === true),
+        sizeBytes: await this.assetSize(file),
         // The tag it *would* carry, which is what makes the row readable: the
         // emulator column would otherwise be blank on exactly the rows that
         // have not been anywhere yet.
@@ -865,7 +975,7 @@ export class SaveSync {
           kind,
           fileName: asset.fileName,
           path: asset.path,
-          sizeBytes: await sizeOf(asset.path, asset.isDirectory === true),
+          sizeBytes: await this.assetSize(asset),
           modifiedAt: new Date(asset.mtimeMs).toISOString(),
           emulator: tag,
           slot: slotToSend(asset.fileName, primary),
@@ -1095,6 +1205,20 @@ export class SaveSync {
 
     if (scope === 'local') {
       if (!asset.localPath) throw new Error(t('error.assetNotLocal', { file: fileName }))
+      // A unit's path names nothing on the disk: what is this game's in that
+      // folder is its members, and only those go — each copied aside first,
+      // the rest of the card being every other game's.
+      const location = local ? this.locationFor(this.locate(local), kind) : null
+      if (location?.match === 'unit' && location.unit) {
+        await this.ensureUnitIdle(location.unit, romId)
+        const removed = await removeUnit(location.dir, location.unit, this.backupDir(romId))
+        log.info('saves', 'removed this game’s entries from a shared save folder', {
+          romId,
+          dir: location.dir,
+          removed
+        })
+        return
+      }
       await rm(asset.localPath, { force: true, recursive: true })
       return
     }
@@ -1204,7 +1328,7 @@ export class SaveSync {
      */
     const tag = this.tagFor(paths, target)
     const usable = this.tagDecides(kind, location)
-      ? remote.filter((item) => acceptsTag(tag, item.emulator, paths.alsoAccepts))
+      ? remote.filter((item) => acceptsTag(tag, item.emulator, this.alsoAcceptedFor(paths, kind)))
       : remote
     // What was left, and why. A pull that brings nothing down is otherwise a
     // count of zero against a screen that is still listing the file, which reads
@@ -1219,7 +1343,16 @@ export class SaveSync {
       })
     }
 
-    const wanted = this.toPull(kind, usable)
+    const unit = location.match === 'unit' ? (location.unit ?? null) : null
+    /**
+     * A unit comes down from its slot and from nowhere else. It is the game's
+     * whole save on that card, which every client files under the one slot; a
+     * copy with no slot is something a person put there by hand, and unpacking
+     * it over the game's entries is a decision for the game screen, not a sync.
+     */
+    const wanted = this.toPull(kind, usable).filter(
+      (entry) => !unit || entry.slot === AUTOSAVE_SLOT
+    )
     if (wanted.length === 0) return { written: 0, offered: remote.length, failed: 0 }
 
     /**
@@ -1234,7 +1367,7 @@ export class SaveSync {
      * displaced into within three of them.
      */
     const isArchive = (item: RommSave | RommState): boolean =>
-      item.file_name.endsWith(ARCHIVE_SUFFIX)
+      unit !== null || item.file_name.endsWith(ARCHIVE_SUFFIX)
     const newestArchive = wanted
       .filter((entry) => isArchive(entry.item))
       .sort((a, b) => Date.parse(b.item.updated_at) - Date.parse(a.item.updated_at))[0]
@@ -1296,6 +1429,21 @@ export class SaveSync {
        */
       const archive = isArchive(item)
       /**
+       * A unit is a zip, and nothing else unpacks: a card image another client
+       * filed under the slot, read as an archive, would fail halfway into the
+       * pull.
+       */
+      if (unit && archive && extname(item.file_name).toLowerCase() !== '.zip') {
+        log.warn('saves', 'left a copy of a shared card that is not an archive', {
+          romId: target.rom.id,
+          id: item.id,
+          fileName: item.file_name,
+          key: unit.key
+        })
+        failed += 1
+        continue
+      }
+      /**
        * `safeJoin` because `file_name` is the server's, and a save uploaded
        * through RomM's own web interface can be called anything. The rest of the
        * main process already guards this input — see `bios.ts`, `downloads.ts`
@@ -1343,9 +1491,13 @@ export class SaveSync {
       // For an archive that is the newest thing in the folder, which is what
       // `findLocal` stamps its synthetic asset with — a directory's own mtime
       // says nothing about the saves inside it.
-      const landed = archive
-        ? this.env.newest(location.dir) || undefined
-        : (match?.mtimeMs ?? (await stat(destination).catch(() => null))?.mtimeMs)
+      // A unit's age is its members', never the shared folder's, which every
+      // other game on the card moves.
+      const landed = unit
+        ? match?.mtimeMs
+        : archive
+          ? this.env.newest(location.dir) || undefined
+          : (match?.mtimeMs ?? (await stat(destination).catch(() => null))?.mtimeMs)
       if (landed !== undefined && landed >= remoteTime - SYNC_TOLERANCE_MS) continue
 
       /**
@@ -1362,16 +1514,20 @@ export class SaveSync {
        * about a file that was never in question and the next launch settles it
        * without reading anything off the disk.
        */
-      if (match && !match.isDirectory && (await sameContent(match.path, contentHashOf(item)))) {
+      if (match && (await this.sameAsRemote(match, contentHashOf(item)))) {
         log.debug('saves', `the ${kind} here is already the copy on the server`, {
           romId: target.rom.id,
           id: item.id,
           fileName: item.file_name,
           path: match.path
         })
-        await stampMtime(match.path, remoteTime)
+        // A unit's members are what carries its date, not the path it is
+        // listed under. The same stamp an upload leaves, for the same reason.
+        await this.stampUploaded(match, remoteTime)
         continue
       }
+
+      if (unit) await this.ensureUnitIdle(unit, target.rom.id)
 
       // Reported here rather than at the top of the loop: everything above is
       // a file the pull decided not to fetch, and a counter that moved for
@@ -1387,9 +1543,22 @@ export class SaveSync {
           ? (to: string): Promise<void> => this.client.downloadSave(item.id, to, onBytes)
           : (to: string): Promise<void> => this.client.downloadState(item.id, to, onBytes)
 
+      /** Whether the pull wrote over something here, for the log. */
+      let overwrote = Boolean(match)
       try {
         const backups = this.backupDir(target.rom.id)
-        if (item.file_name.endsWith(ARCHIVE_SUFFIX)) {
+        if (unit && archive) {
+          overwrote = await this.restoreUnitArchive(
+            location.dir,
+            unit,
+            backups,
+            download,
+            remoteTime,
+            contentHashOf(item),
+            item.file_size_bytes,
+            target.rom.id
+          )
+        } else if (archive) {
           await this.restoreArchive(location.dir, backups, download, remoteTime)
         } else {
           await this.restoreFile(
@@ -1411,8 +1580,8 @@ export class SaveSync {
           // The path rather than the folder: a slot-paired save is written
           // under this game's name and not the server's, so the folder alone
           // no longer says which file the emulator will open next.
-          into: destination,
-          overwrote: Boolean(match)
+          into: unit ? location.dir : destination,
+          overwrote
         })
       } catch (cause) {
         // A single failed asset should not block the launch — but it is the
@@ -1503,6 +1672,52 @@ export class SaveSync {
       await stampMtime(destination, remoteTime)
     } finally {
       await rm(partial, { force: true }).catch(() => undefined)
+    }
+  }
+
+  /**
+   * Bring down one game's entries of a shared card and swap them in.
+   *
+   * Downloaded and checked the way a single file is — the md5 RomM states, or
+   * the length where it states none — before `restoreUnit` looks at it: an
+   * archive cut short can still list its roots, and unpacking one is a save
+   * replaced by part of itself.
+   */
+  private async restoreUnitArchive(
+    dir: string,
+    unit: SaveUnit,
+    backups: string,
+    download: (to: string) => Promise<void>,
+    remoteTime: number,
+    contentHash: string | null,
+    expectedBytes: number,
+    romId: number
+  ): Promise<boolean> {
+    const archive = join(tmpdir(), `rommix-unit-${romId}-${Date.now()}.zip`)
+    try {
+      await download(archive)
+      if (contentHash) {
+        // RomM hashes an archive by its contents rather than its bytes — see
+        // `zipContentHash` — and the bytes are asked too, for a server that
+        // recorded them instead.
+        const expected = contentHash.toLowerCase()
+        const arrived = await zipContentHash(archive).catch(() => null)
+        if (arrived !== expected && (await hashOf(archive, 'md5')) !== expected) {
+          log.error('saves', 'the archive that arrived is not the one RomM recorded', undefined, {
+            key: unit.key,
+            expected,
+            arrived
+          })
+          throw new Error(t('error.saveEndedEarly', { name: unit.key }))
+        }
+      } else if (expectedBytes > 0 && (await sizeOf(archive, false)) !== expectedBytes) {
+        throw new Error(t('error.saveEndedEarly', { name: unit.key }))
+      }
+      const had = (await findUnit(dir, unit)).members
+      const wrote = await restoreUnit({ dir, unit, archive, backups, remoteTime, romId })
+      return wrote.some((name) => had.includes(name))
+    } finally {
+      await rm(archive, { force: true }).catch(() => undefined)
     }
   }
 
@@ -1662,7 +1877,10 @@ export class SaveSync {
       try {
         if (asset.isDirectory) {
           staged = join(tmpdir(), `rommix-save-${target.rom.id}-${Date.now()}.zip`)
-          const count = await zipDirectory(asset.path, staged)
+          // A unit's archive holds its members and nothing else of the card.
+          const count = asset.unit
+            ? await zipMembers(asset.unit.dir, asset.unit.members, staged)
+            : await zipDirectory(asset.path, staged)
           if (count === 0) {
             log.info('saves', 'save folder is empty, nothing to upload', {
               romId: target.rom.id,
@@ -1723,6 +1941,14 @@ export class SaveSync {
    */
   private async stampUploaded(asset: LocalAsset, remoteTime: number): Promise<void> {
     if (!Number.isFinite(remoteTime)) return
+    if (asset.unit) {
+      for (const member of asset.unit.members) {
+        const path = join(asset.unit.dir, member)
+        for (const file of await walk(path)) await stampMtime(file, remoteTime)
+        await stampMtime(path, remoteTime)
+      }
+      return
+    }
     if (!asset.isDirectory) {
       await stampMtime(asset.path, remoteTime)
       return

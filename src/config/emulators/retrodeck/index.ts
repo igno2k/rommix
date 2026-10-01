@@ -2,8 +2,9 @@ import { systemsWithCore } from '../../systems.ts'
 import { retroDeckBiosDir } from './bios.ts'
 import { retroDeckSavePaths } from './saves.ts'
 import type { EmulatorDescriptor } from '../types.ts'
+import { RETRODECK_APP_ID } from './appid.ts'
 
-export const RETRODECK_APP_ID = 'net.retrodeck.retrodeck'
+export { RETRODECK_APP_ID }
 
 /**
  * Where RetroDECK keeps its libretro cores, inside its own sandbox.

@@ -602,12 +602,14 @@ export const en = {
   // key and `localize` resolves it. Held here rather than beside them so that
   // one phrase serves every frontend that ships the same component: RetroDECK
   // and EmuDeck both run Dolphin, and both said so in their own words before.
-  'saves.retrodeckPcsx2':
-    'RetroDECK gives PCSX2 one memory card shared by every PS2 game, so there is no save file that belongs to this one. Save states are synced.',
   'saves.retrodeckDuckstation':
     'RetroDECK gives DuckStation one memory card shared by every PS1 game, so there is no save file that belongs to this one. Save states are synced.',
+  'saves.noSaveTarget':
+    "RomM has not read this game's save id — the serial or disc id its saves are filed under on the shared memory card. Rescan the platform on RomM 5.3 or later, then sync again.",
+  'saves.pcsx2NoCard':
+    "PCSX2's memory card in slot 1 is not a folder card, so this game's saves cannot be told apart from the other games' on it. Convert it to a folder card in PCSX2's memory card settings. Save states are not synced for PS2: PCSX2 names them after the game's serial, not the ROM.",
   'saves.pcsx2':
-    'PCSX2 keeps one memory card shared by every PS2 game, so there is no save file that belongs to this one. Save states are synced.',
+    "PCSX2 keeps one memory card shared by every PS2 game, so there is no save file that belongs to this one. Save states are not synced for PS2: PCSX2 names them after the game's serial, not the ROM.",
   'saves.dolphin':
     'Dolphin keeps one GameCube memory card per region and one Wii NAND for every game, so there is no save file that belongs to this one. Save states are synced.',
   'saves.primehack':
@@ -1031,6 +1033,8 @@ export const en = {
   'error.saveTreeTooLarge': 'This save folder is too large to send as one archive.',
   'error.saveArchiveTooLarge':
     'The copy on RomM unpacks to far more than a save can be, so it was left alone.',
+  'error.unitBusy':
+    'Close {name} and any game first: an emulator that is running would write over the saves being replaced.',
   'error.unitRefused':
     "The copy on RomM of the saves filed under {name} holds data that is not this game's, so the shared card was left as it was.",
   'error.unitNoBackup':

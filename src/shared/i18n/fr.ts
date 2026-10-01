@@ -601,12 +601,14 @@ export const fr: Catalog = {
   'saves.noAskAgain': 'Les sauvegardes seront envoyées sans demander',
   'saves.deleted': '{file} supprimé {where}',
   // -- ce qu'un émulateur donné ne peut pas synchroniser, et ce qu'il attend --
-  'saves.retrodeckPcsx2':
-    "RetroDECK donne à PCSX2 une seule carte mémoire partagée par tous les jeux PS2 : aucune sauvegarde n'appartient donc à celui-ci. Les états de sauvegarde sont synchronisés.",
   'saves.retrodeckDuckstation':
     "RetroDECK donne à DuckStation une seule carte mémoire partagée par tous les jeux PS1 : aucune sauvegarde n'appartient donc à celui-ci. Les états de sauvegarde sont synchronisés.",
+  'saves.noSaveTarget':
+    "RomM n'a pas lu l'identifiant de sauvegarde de ce jeu — le numéro de série ou l'identifiant de disque sous lequel ses sauvegardes sont rangées sur la carte mémoire partagée. Relancez l'analyse de la plateforme avec RomM 5.3 ou plus récent, puis synchronisez à nouveau.",
+  'saves.pcsx2NoCard':
+    "La carte mémoire de PCSX2 dans l'emplacement 1 n'est pas une carte dossier : les sauvegardes de ce jeu ne peuvent pas être distinguées de celles des autres jeux. Convertissez-la en carte dossier dans les réglages de cartes mémoire de PCSX2. Les états de sauvegarde PS2 ne sont pas synchronisés : PCSX2 les nomme d'après le numéro de série du jeu, et non d'après la ROM.",
   'saves.pcsx2':
-    "PCSX2 garde une seule carte mémoire partagée par tous les jeux PS2 : aucune sauvegarde n'appartient donc à celui-ci. Les états de sauvegarde sont synchronisés.",
+    "PCSX2 garde une seule carte mémoire partagée par tous les jeux PS2 : aucune sauvegarde n'appartient donc à celui-ci. Les états de sauvegarde PS2 ne sont pas synchronisés : PCSX2 les nomme d'après le numéro de série du jeu, et non d'après la ROM.",
   'saves.dolphin':
     "Dolphin garde une carte mémoire GameCube par région et une seule NAND Wii pour tous les jeux : aucune sauvegarde n'appartient donc à celui-ci. Les états de sauvegarde sont synchronisés.",
   'saves.primehack':
@@ -1052,6 +1054,8 @@ export const fr: Catalog = {
     'Ce dossier de sauvegarde est trop volumineux pour être envoyé en une archive.',
   'error.saveArchiveTooLarge':
     "La copie sur RomM se décompresse en bien plus qu'une sauvegarde ne peut peser : elle n'a pas été utilisée.",
+  'error.unitBusy':
+    "Fermez d'abord {name} et tout jeu : un émulateur en cours écraserait les sauvegardes en train d'être remplacées.",
   'error.unitRefused':
     "La copie sur RomM des sauvegardes rangées sous {name} contient des données qui ne sont pas celles de ce jeu : la carte partagée n'a pas été modifiée.",
   'error.unitNoBackup':

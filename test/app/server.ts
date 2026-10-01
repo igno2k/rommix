@@ -65,7 +65,8 @@ export interface FakeRomm {
     romId: number
     fileName: string
     emulator: string
-    content: string
+    /** Bytes where the save is an archive, which a string would mangle. */
+    content: string | Buffer
     /** The slot RomM pairs it under. Omitted, it is a save that pairs with none. */
     slot?: string
   }) => void
@@ -86,6 +87,8 @@ export interface FakeRomm {
     slot: string | null
     deviceId: string | null
     body: string
+    /** `body` as it arrived, for a multipart part that is not text — a zip. */
+    bytes: Buffer
   }[]
   /** Every request, in order. */
   asked: Asked[]
@@ -662,9 +665,18 @@ function serveBytes(req: IncomingMessage, res: ServerResponse, bytes: Buffer): v
 }
 
 /** Start it on a port the operating system picks, so tests can run at once. */
-export async function startFakeRomm(): Promise<FakeRomm> {
+export async function startFakeRomm(
+  options: {
+    /**
+     * A PlayStation 2 game as well, with the serial RomM 5.3 reads out of the
+     * disc as `save_target` — the key its saves on a PCSX2 folder card are
+     * found by. Off for every other file, whose screens count the library.
+     */
+    ps2?: boolean
+  } = {}
+): Promise<FakeRomm> {
   const asked: Asked[] = []
-  const held: { save: RommSave; content: string }[] = []
+  const held: { save: RommSave; content: string | Buffer }[] = []
   /** States this server holds, seeded by `holdState` or left by a push. */
   const heldStates: { state: RommState; content: string }[] = []
   const uploaded: FakeRomm['uploaded'] = []
@@ -697,6 +709,10 @@ export async function startFakeRomm(): Promise<FakeRomm> {
     discSet(4, 'Disc Adventure', segacd, 'Disc Adventure'),
     slow
   ]
+  const ps2 = platform(5, 'ps2', 'PlayStation 2')
+  const platforms = [megadrive, gameboy, nintendoSwitch, segacd, ...(options.ps2 ? [ps2] : [])]
+  if (options.ps2)
+    roms.push({ ...rom(6, 'Jak and Daxter', ps2, 'jak.iso'), save_target: PS2_SERIAL })
 
   /**
    * One shelf somebody made, holding games from two different platforms.
@@ -944,8 +960,7 @@ export async function startFakeRomm(): Promise<FakeRomm> {
       }
 
       if (url.pathname === '/api/users/me') return json(user)
-      if (url.pathname === '/api/platforms')
-        return json([megadrive, gameboy, nintendoSwitch, segacd])
+      if (url.pathname === '/api/platforms') return json(platforms)
       /**
        * The shelves, and the one RomM makes on its own.
        *
@@ -1056,7 +1071,8 @@ export async function startFakeRomm(): Promise<FakeRomm> {
             emulator: url.searchParams.get('emulator'),
             slot: url.searchParams.get('slot'),
             deviceId: url.searchParams.get('device_id'),
-            body: Buffer.concat(chunks).toString()
+            body: Buffer.concat(chunks).toString(),
+            bytes: Buffer.concat(chunks)
           })
           const saved: RommSave = {
             id: 900 + asked.length,
@@ -1071,8 +1087,11 @@ export async function startFakeRomm(): Promise<FakeRomm> {
             slot: url.searchParams.get('slot'),
             content_hash: createHash('md5').update(Buffer.concat(chunks)).digest('hex'),
             origin_device_id: url.searchParams.get('device_id'),
-            created_at: '2026-01-01T00:00:00Z',
-            updated_at: '2026-01-01T00:00:00Z'
+            // When it arrived, as RomM stamps it. The client dates its own
+            // copy by this, and a date before the copy the server already held
+            // would read as that older copy being the newer one.
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           }
           return json(saved)
         }
@@ -1101,7 +1120,8 @@ export async function startFakeRomm(): Promise<FakeRomm> {
           // States carry none: RomM keeps no slot for them.
           slot: null,
           deviceId: url.searchParams.get('device_id'),
-          body: Buffer.concat(chunks).toString()
+          body: Buffer.concat(chunks).toString(),
+          bytes: Buffer.concat(chunks)
         })
         const kept: RommState = {
           id: 950 + heldStates.length,
@@ -1245,7 +1265,7 @@ export async function startFakeRomm(): Promise<FakeRomm> {
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     asked,
-    platforms: [megadrive, gameboy, nintendoSwitch, segacd],
+    platforms,
     uploaded,
     holdPlaySession: ({ romId, seconds }) => {
       PLAY_SESSIONS.set(romId, [...(PLAY_SESSIONS.get(romId) ?? []), seconds * 1000])
@@ -1334,3 +1354,6 @@ export async function startFakeRomm(): Promise<FakeRomm> {
 
 /** What a downloaded game should hash to, for a test that checks the file. */
 export const ROM_CONTENT = ROM_BYTES
+
+/** The serial the PS2 game is filed under — see `startFakeRomm`'s `ps2`. */
+export const PS2_SERIAL = 'SLUS-20152'

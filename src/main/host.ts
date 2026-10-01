@@ -1,9 +1,9 @@
 import { execFile, spawn } from 'node:child_process'
 import { access, constants, readdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
 import { APPIMAGE_SEARCH_DIRS } from '@config/emulators'
-import type { ResolvedInstall } from '@config/emulators'
+import type { BusyWhile, ResolvedInstall } from '@config/emulators'
 import { log } from './log.ts'
 import { realHome } from './xdg.ts'
 import { t } from './i18n.ts'
@@ -98,6 +98,59 @@ const KILL_SETTLE_MS = 400
 export async function processTreeOf(roots: readonly number[]): Promise<number[]> {
   const ps = await run(['ps', '-eo', 'pid=,ppid='])
   return [...descendantsOf(ps ?? '', roots), ...roots]
+}
+
+/**
+ * What of a flatpak app, and of the programs it runs, is running now — one
+ * line each for the log, empty where nothing is. See `BusyWhile`.
+ *
+ * `ps` rather than `pgrep` for the same reason `processTreeOf` uses it.
+ */
+export async function runningOf(busy: BusyWhile): Promise<string[]> {
+  const [apps, ps] = await Promise.all([
+    run(['flatpak', 'ps', '--columns=application']),
+    run(['ps', '-eo', 'pid=,args='])
+  ])
+  // Nothing could be asked, so nothing is known to run and the write goes
+  // ahead — said, because a PCSX2 that is running writes its card back on exit.
+  if (apps === null && ps === null) {
+    log.warn('host', 'could not tell whether anything runs before a shared save is written', {
+      appId: busy.appId,
+      programs: busy.programs
+    })
+  }
+  return runningIn(apps, ps ?? '', busy, process.pid)
+}
+
+/**
+ * `runningOf`, from the two listings: `flatpak ps --columns=application`, null
+ * where it could not be run, and `ps -eo pid=,args=`. A program is matched by
+ * the name of what runs, never by an argument, and never as this process.
+ */
+export function runningIn(
+  flatpakPs: string | null,
+  psOutput: string,
+  busy: Pick<BusyWhile, 'appId' | 'programs'>,
+  self: number
+): string[] {
+  const apps = (flatpakPs ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((app) => app === busy.appId)
+    .map((app) => `flatpak ${app}`)
+  const programs = psOutput
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => {
+      const [pid, program] = line.split(/\s+/)
+      return (
+        Number.isInteger(Number(pid)) &&
+        Number(pid) > 0 &&
+        Number(pid) !== self &&
+        busy.programs.includes(basename(program ?? ''))
+      )
+    })
+  return [...apps, ...programs]
 }
 
 /** Every process descended from `roots`, from one snapshot of the process table. */

@@ -606,12 +606,14 @@ export const de: Catalog = {
   'saves.noAskAgain': 'Spielstände werden künftig ohne Nachfrage gesendet',
   'saves.deleted': '{file} gelöscht {where}',
   // -- was ein bestimmter Emulator nicht abgleichen kann, und was er braucht --
-  'saves.retrodeckPcsx2':
-    'RetroDECK gibt PCSX2 eine einzige Memory Card für alle PS2-Spiele, deshalb gehört keine Speicherdatei zu diesem einen Spiel. Savestates werden synchronisiert.',
   'saves.retrodeckDuckstation':
     'RetroDECK gibt DuckStation eine einzige Memory Card für alle PS1-Spiele, deshalb gehört keine Speicherdatei zu diesem einen Spiel. Savestates werden synchronisiert.',
+  'saves.noSaveTarget':
+    'RomM hat die Speicher-ID dieses Spiels nicht gelesen – die Seriennummer oder Disc-ID, unter der seine Spielstände auf der gemeinsamen Memory Card abgelegt sind. Scanne die Plattform mit RomM 5.3 oder neuer erneut und synchronisiere dann noch einmal.',
+  'saves.pcsx2NoCard':
+    'Die Memory Card von PCSX2 in Slot 1 ist keine Ordner-Karte, deshalb lassen sich die Spielstände dieses Spiels nicht von denen der anderen Spiele trennen. Wandle sie in den Memory-Card-Einstellungen von PCSX2 in eine Ordner-Karte um. Savestates werden für PS2 nicht synchronisiert: PCSX2 benennt sie nach der Seriennummer des Spiels, nicht nach dem ROM.',
   'saves.pcsx2':
-    'PCSX2 führt eine einzige Memory Card für alle PS2-Spiele, deshalb gehört keine Speicherdatei zu diesem einen Spiel. Savestates werden synchronisiert.',
+    'PCSX2 führt eine einzige Memory Card für alle PS2-Spiele, deshalb gehört keine Speicherdatei zu diesem einen Spiel. Savestates werden für PS2 nicht synchronisiert: PCSX2 benennt sie nach der Seriennummer des Spiels, nicht nach dem ROM.',
   'saves.dolphin':
     'Dolphin führt eine GameCube-Memory-Card pro Region und einen einzigen Wii-NAND für alle Spiele, deshalb gehört keine Speicherdatei zu diesem einen Spiel. Savestates werden synchronisiert.',
   'saves.primehack':
@@ -1063,6 +1065,8 @@ export const de: Catalog = {
     'Dieser Spielstand-Ordner ist zu groß, um als ein Archiv gesendet zu werden.',
   'error.saveArchiveTooLarge':
     'Die Kopie auf RomM entpackt sich zu weit mehr, als ein Spielstand sein kann, daher wurde sie nicht verwendet.',
+  'error.unitBusy':
+    'Schließe zuerst {name} und jedes Spiel: Ein laufender Emulator würde die Spielstände überschreiben, die gerade ersetzt werden.',
   'error.unitRefused':
     'Die Kopie auf RomM der unter {name} abgelegten Spielstände enthält Daten, die nicht zu diesem Spiel gehören, daher blieb die gemeinsame Karte unverändert.',
   'error.unitNoBackup':

@@ -13,6 +13,7 @@ import {
 } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
+import { crc32 } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SaveProgress } from '@shared/api'
@@ -96,6 +97,56 @@ function device(fields: Partial<RommDevice> = {}): RommDevice {
   }
 }
 
+/**
+ * A zip of `files`, stored, beside a folder entry declaring `declared` bytes.
+ *
+ * The size cap reads what an archive declares and nothing else — see
+ * `withinSize` in `zip.ts` — and a folder entry is made rather than read, so
+ * this stands in for a save that large without writing one.
+ */
+function declaringZip(files: Record<string, string>, folder: string, declared: number): Buffer {
+  const entries = [
+    ...Object.entries(files).map(([name, text]) => ({ name, data: Buffer.from(text), method: 0 })),
+    { name: `${folder}/`, data: Buffer.alloc(0), method: 8 }
+  ]
+  const local: Buffer[] = []
+  const central: Buffer[] = []
+  let offset = 0
+  for (const { name, data, method } of entries) {
+    const fileName = Buffer.from(name)
+    const size = method === 0 ? data.length : declared
+    const head = Buffer.alloc(30)
+    head.writeUInt32LE(0x04034b50, 0)
+    head.writeUInt16LE(20, 4)
+    head.writeUInt16LE(method, 8)
+    head.writeUInt32LE(crc32(data), 14)
+    head.writeUInt32LE(data.length, 18)
+    head.writeUInt32LE(size, 22)
+    head.writeUInt16LE(fileName.length, 26)
+    const listed = Buffer.alloc(46)
+    listed.writeUInt32LE(0x02014b50, 0)
+    listed.writeUInt16LE(20, 4)
+    listed.writeUInt16LE(20, 6)
+    listed.writeUInt16LE(method, 10)
+    listed.writeUInt32LE(crc32(data), 16)
+    listed.writeUInt32LE(data.length, 20)
+    listed.writeUInt32LE(size, 24)
+    listed.writeUInt16LE(fileName.length, 28)
+    listed.writeUInt32LE(offset, 42)
+    local.push(head, fileName, data)
+    central.push(listed, fileName)
+    offset += head.length + fileName.length + data.length
+  }
+  const directory = Buffer.concat(central)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(entries.length, 8)
+  end.writeUInt16LE(entries.length, 10)
+  end.writeUInt32LE(directory.length, 12)
+  end.writeUInt32LE(offset, 16)
+  return Buffer.concat([...local, directory, end])
+}
+
 /** A device with a save folder, a state folder, and a game installed. */
 function setUp(
   options: {
@@ -108,6 +159,8 @@ function setUp(
     uploadFails?: boolean
     /** What a download hands back as an archive, for a directory save. */
     archive?: Record<string, string>
+    /** An archive a download hands back as it is, in place of `archive`. */
+    zip?: Buffer
     /** How many bytes arrive before the connection drops. See `download`. */
     breakAfter?: number
   } = {}
@@ -147,6 +200,7 @@ function setUp(
       await writeFile(to, REMOTE_BYTES.slice(0, options.breakAfter))
       throw new Error('the transfer from RomM broke off')
     }
+    if (options.zip) return writeFile(to, options.zip)
     if (!options.archive) return writeFile(to, REMOTE_BYTES)
     const staging = scratch()
     for (const [name, contents] of Object.entries(options.archive)) {
@@ -1211,6 +1265,18 @@ describe('a save the emulator keeps as a folder', () => {
     const kept = join(backups, '7', `${TITLE_ID}.1`)
     assert.equal(readFileSync(join(kept, 'save.dat'), 'utf8'), 'played here')
     assert.equal(readFileSync(join(kept, 'profile/settings.dat'), 'utf8'), 'played here too')
+  })
+
+  test('a folder save is unpacked whatever size it declares, as before units', async () => {
+    const { sync, target, gameDir } = switchGame({
+      saves: [save({ file_name: `Zelda [${TITLE_ID}].rommix-save.zip`, emulator: 'eden' })],
+      zip: declaringZip({ 'save.dat': 'from the server' }, 'cache', 600 * 1024 * 1024)
+    })
+
+    const result = await sync.pullNow(target)
+
+    assert.deepEqual([result.saves, result.failed], [1, 0])
+    assert.equal(readFileSync(join(gameDir, 'save.dat'), 'utf8'), 'from the server')
   })
 
   test('an empty folder is not uploaded as if it were a save', async () => {

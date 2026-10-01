@@ -594,12 +594,14 @@ export const es: Catalog = {
   'saves.noAskAgain': 'Las partidas se enviarán sin preguntar',
   'saves.deleted': '{file} borrado {where}',
   // -- lo que un emulador concreto no puede sincronizar, y lo que le falta ----
-  'saves.retrodeckPcsx2':
-    'RetroDECK da a PCSX2 una sola tarjeta de memoria compartida por todos los juegos de PS2, así que no hay ninguna partida guardada que pertenezca a este. Los estados guardados sí se sincronizan.',
   'saves.retrodeckDuckstation':
     'RetroDECK da a DuckStation una sola tarjeta de memoria compartida por todos los juegos de PS1, así que no hay ninguna partida guardada que pertenezca a este. Los estados guardados sí se sincronizan.',
+  'saves.noSaveTarget':
+    'RomM no ha leído el identificador de guardado de este juego: el número de serie o de disco con el que se archivan sus partidas en la tarjeta de memoria compartida. Vuelve a escanear la plataforma con RomM 5.3 o posterior y sincroniza de nuevo.',
+  'saves.pcsx2NoCard':
+    'La tarjeta de memoria de PCSX2 en la ranura 1 no es una tarjeta de carpeta, así que las partidas de este juego no se pueden separar de las de los demás. Conviértela en tarjeta de carpeta en los ajustes de tarjetas de memoria de PCSX2. Los estados guardados de PS2 no se sincronizan: PCSX2 los nombra según el número de serie del juego, no según la ROM.',
   'saves.pcsx2':
-    'PCSX2 mantiene una sola tarjeta de memoria compartida por todos los juegos de PS2, así que no hay ninguna partida guardada que pertenezca a este. Los estados guardados sí se sincronizan.',
+    'PCSX2 mantiene una sola tarjeta de memoria compartida por todos los juegos de PS2, así que no hay ninguna partida guardada que pertenezca a este. Los estados guardados de PS2 no se sincronizan: PCSX2 los nombra según el número de serie del juego, no según la ROM.',
   'saves.dolphin':
     'Dolphin mantiene una tarjeta de memoria de GameCube por región y una sola NAND de Wii para todos los juegos, así que no hay ninguna partida guardada que pertenezca a este. Los estados guardados sí se sincronizan.',
   'saves.primehack':
@@ -1039,6 +1041,8 @@ export const es: Catalog = {
     'Esta carpeta de partidas es demasiado grande para enviarse como un solo archivo.',
   'error.saveArchiveTooLarge':
     'La copia en RomM se descomprime en mucho más de lo que puede ocupar una partida, así que no se usó.',
+  'error.unitBusy':
+    'Cierra antes {name} y cualquier juego: un emulador en marcha sobrescribiría las partidas que se están reemplazando.',
   'error.unitRefused':
     'La copia en RomM de las partidas archivadas como {name} contiene datos que no son de este juego, así que la tarjeta compartida no se tocó.',
   'error.unitNoBackup':
