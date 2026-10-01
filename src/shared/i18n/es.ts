@@ -1039,6 +1039,10 @@ export const es: Catalog = {
     'Esta carpeta de partidas es demasiado grande para enviarse como un solo archivo.',
   'error.saveArchiveTooLarge':
     'La copia en RomM se descomprime en mucho más de lo que puede ocupar una partida, así que no se usó.',
+  'error.unitRefused':
+    'La copia en RomM de las partidas archivadas como {name} contiene datos que no son de este juego, así que la tarjeta compartida no se tocó.',
+  'error.unitNoBackup':
+    'RomMix no pudo guardar una copia de {name} antes de reemplazarlo, así que no se cambió nada.',
   'error.emptyAssetBody': 'Cuerpo de archivo vacío',
   'error.credentialsRequired': 'El usuario y la contraseña son obligatorios',
   'error.tokenRequired': 'Hace falta un token de API',
